@@ -25,6 +25,44 @@ const STACK_COLORS = {
   other: "#E8EEF8",
 };
 
+const PROFILE_LABELS = [
+  "Производственный инженер/Өндіріс инженері",
+  "Молодой специалист/Жас маман",
+  "Исследователь/Зерттеуші",
+  "Иное",
+];
+const QUESTION_SHORT_LABELS = {
+  "Интересно ли вам узнать, какие возможности даёт цифровизация бизнес-процессов во взаимодействии между потребителем и контролирующей организацией":
+    "Цифровизация процессов",
+
+  "Интересно ли вам узнать о подходах цифровизации, которые помогают принимать обоснованные решения по количественной оценке водных ресурсов":
+    "Подходы цифровизации / Цифрландыру тәсілдері",
+
+  "Интересно ли вам разобраться, какие современные методы измерения расхода воды позволяют получать более точные и надёжные данные":
+    "Методы измерения воды",
+
+  "Интересно ли вам узнать, как современные системы мониторинга и автоматического регулирования помогают эффективно управлять уровнем и расходом воды":
+    "Мониторинг и регулирование",
+
+  "Интересно ли вам разобраться, как математические модели используются для анализа и прогнозирования состояния водных ресурсов":
+    "Математические модели",
+
+  "Интересно ли вам разобраться, как можно заранее оценивать возможные изменения водообеспеченности региона":
+    "Сценарии водообеспечения",
+
+  "Полезно ли вам разобраться, как сценарное моделирование помогает управлять водными ресурсами":
+    "Сценарное моделирование",
+
+  "Интересно ли вам разобраться, как современные измерительные комплексы и автоматизированные механизмы регулирования помогают эффективно управлять подачей и распределением воды":
+    "Измерительные системы",
+
+  "Интересно ли вам разобраться, как интеграция данных из разных источников помогает формировать целостную картину состояния водных ресурсов региона":
+    "Интеграция данных",
+
+  "Интересно ли вам узнать, какие программные решения и алгоритмы помогают оценивать эффективность распределения воды":
+    "Алгоритмы распределения воды",
+};
+
 function normalizeValue(value) {
   if (value === null || value === undefined) return "";
   return String(value).trim();
@@ -34,6 +72,7 @@ function isMetaHeader(header) {
   const h = header.toLowerCase();
   return (
     h.includes("timestamp") ||
+    h.includes("отметка времени") ||
     h.includes("время") ||
     h.includes("time") ||
     h === ""
@@ -42,6 +81,7 @@ function isMetaHeader(header) {
 
 function buildChoiceData(values) {
   const map = {};
+
   values
     .map(normalizeValue)
     .filter(Boolean)
@@ -54,9 +94,19 @@ function buildChoiceData(values) {
     .sort((a, b) => b.value - a.value);
 }
 
-function shortenQuestion(text, max = 70) {
+function shortenQuestion(text) {
   if (!text) return "";
-  return text.length > max ? `${text.slice(0, max).trim()}...` : text;
+
+  // ищем совпадение по началу текста
+  const found = Object.keys(QUESTION_SHORT_LABELS).find((key) =>
+    text.startsWith(key)
+  );
+
+  if (found) {
+    return QUESTION_SHORT_LABELS[found];
+  }
+
+  return text.length > 60 ? text.slice(0, 60) + "..." : text;
 }
 
 function classifyResponse(value) {
@@ -65,38 +115,24 @@ function classifyResponse(value) {
   if (!v) return "other";
 
   if (
-    v.includes("да, хочу понять") ||
     v.includes("хочу понять") ||
-    v.includes("want to understand") ||
-    v.includes("very interested")
+    v.includes("түсінгім келеді")
   ) {
     return "strong";
   }
 
   if (
     v.includes("интересно узнать") ||
-    v.includes("интересно") ||
-    v.includes("would like to know") ||
-    v.includes("interested to learn")
+    v.includes("білгім келеді")
   ) {
     return "interest";
   }
 
   if (
     v.includes("полезно понять") ||
-    v.includes("полезно") ||
-    v.includes("useful to understand") ||
-    v.includes("helpful to understand")
+    v.includes("түсіну пайдалы")
   ) {
     return "useful";
-  }
-
-  if (
-    v.includes("иное") ||
-    v.includes("other") ||
-    v.includes("басқа")
-  ) {
-    return "other";
   }
 
   return "other";
@@ -127,6 +163,45 @@ function buildThematicQuestionStats(header, values, totalResponses) {
     strongCount: counts.strong,
     totalCount: counts.strong + counts.interest + counts.useful + counts.other,
   };
+}
+
+function buildProfileData(values) {
+  const counts = {
+    "Производственный инженер/Өндіріс инженері": 0,
+    "Молодой специалист/Жас маман": 0,
+    "Исследователь/Зерттеуші": 0,
+    "Иное": 0,
+  };
+
+  values.forEach((raw) => {
+    const value = normalizeValue(raw);
+    if (!value) return;
+
+    const normalized = value.replace(/\s*,\s*/g, ",");
+    const parts = normalized
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (!parts.length) return;
+
+    parts.forEach((part) => {
+      if (part === "Производственный инженер/Өндіріс инженері") {
+        counts["Производственный инженер/Өндіріс инженері"] += 1;
+      } else if (part === "Молодой специалист/Жас маман") {
+        counts["Молодой специалист/Жас маман"] += 1;
+      } else if (part === "Исследователь/Зерттеуші") {
+        counts["Исследователь/Зерттеуші"] += 1;
+      } else {
+        counts["Иное"] += 1;
+      }
+    });
+  });
+
+  return PROFILE_LABELS.map((label) => ({
+    name: label,
+    value: counts[label],
+  })).filter((item) => item.value > 0);
 }
 
 function renderPieLabel({ cx, cy, midAngle, outerRadius, value, index }) {
@@ -205,7 +280,7 @@ function ProfileBarCard({ title, data }) {
     <div className="chart-card bar-card-custom">
       <h3>{title}</h3>
       <div className="chart-box profile-bar-box">
-        <ResponsiveContainer width="100%" height={340}>
+        <ResponsiveContainer width="100%" height={320}>
           <BarChart
             data={data}
             layout="vertical"
@@ -216,7 +291,7 @@ function ProfileBarCard({ title, data }) {
             <YAxis
               type="category"
               dataKey="name"
-              width={180}
+              width={220}
               tick={{ fontSize: 13, fill: "#173f7a" }}
             />
             <Tooltip />
@@ -257,7 +332,7 @@ function ThematicStackedCard({ data }) {
               }
             />
             <Legend />
-            <Bar dataKey="strong" name="Хочу понять" stackId="a" fill={STACK_COLORS.strong} radius={[0, 0, 0, 0]} />
+            <Bar dataKey="strong" name="Хочу понять" stackId="a" fill={STACK_COLORS.strong} />
             <Bar dataKey="interest" name="Интересно узнать" stackId="a" fill={STACK_COLORS.interest} />
             <Bar dataKey="useful" name="Полезно понять" stackId="a" fill={STACK_COLORS.useful} />
             <Bar dataKey="other" name="Иное" stackId="a" fill={STACK_COLORS.other} radius={[0, 8, 8, 0]} />
@@ -280,14 +355,19 @@ function TopThemesCard({ data }) {
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="shortTitle"
-              angle={-20}
+              angle={0}
               textAnchor="end"
               interval={0}
               height={90}
-              tick={{ fontSize: 12, fill: "#173f7a" }}
+              dx={100}
+              tick={{ fontSize: 10, fill: "#173f7a" }}
             />
             <YAxis allowDecimals={false} />
-            <Tooltip labelFormatter={(label, payload) => payload?.[0]?.payload?.fullTitle || label} />
+            <Tooltip
+              labelFormatter={(label, payload) =>
+                payload?.[0]?.payload?.fullTitle || label
+              }
+            />
             <Bar dataKey="strongCount" fill="#2F6FED" radius={[8, 8, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
@@ -336,7 +416,9 @@ export default function ResultsPage() {
       );
     });
 
-    const thematicHeaders = usefulHeaders.filter((h) => h !== profileHeader);
+    const thematicHeaders = usefulHeaders.filter(
+      (h) => h !== profileHeader
+    );
 
     const firstQuestionData = firstQuestionHeader
       ? buildChoiceData(rows.map((row) => row[firstQuestionHeader]))
@@ -347,7 +429,7 @@ export default function ResultsPage() {
       : [];
 
     const profileQuestionData = profileHeader
-      ? buildChoiceData(rows.map((row) => row[profileHeader]))
+      ? buildProfileData(rows.map((row) => row[profileHeader]))
       : [];
 
     const thematicStats = thematicHeaders
@@ -426,7 +508,7 @@ export default function ResultsPage() {
 
             <div className="stat-card">
               <strong>{analytics.profileCount}</strong>
-              <span>профилей деятельности</span>
+              <span>категорий профиля</span>
             </div>
 
             <div className="stat-card">
