@@ -609,7 +609,7 @@ input, textarea {
 
 .questionnaire-intro {
   margin: 0 0 28px;
-  max-width: 760px;
+  max-width: 850px;
   font-size: 16px;
   line-height: 1.65;
   color: #5c6d87;
@@ -740,6 +740,48 @@ input, textarea {
   }
 }
 /* ---------------------------------- */
+.questionnaire-buttons {
+  display: flex;
+  gap: 16px;
+  margin: 20px 0 30px;
+
+ 
+  justify-content: flex-start;
+  /* flex-wrap: wrap; */
+}
+
+.pill-button {
+  padding: 14px 28px;
+  border-radius: 999px;
+
+  border: 1.5px solid #2f6fed;
+  color: #2f6fed;
+
+  background: transparent;
+
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+
+  text-decoration: none;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  transition: all 0.25s ease;
+
+  /* 👇 ключевой момент */
+  width: auto;
+  white-space: nowrap;
+}
+
+/* hover как в современном UI */
+.pill-button:hover {
+  background: #2f6fed;
+  color: #fff;
+  transform: translateY(-1px);
+}
 
 @media (max-width: 980px) {
   .hero-layout,

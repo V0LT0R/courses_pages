@@ -3,6 +3,12 @@ import { useState } from "react";
 const GOOGLE_FORM_ACTION =
   "https://docs.google.com/forms/d/e/1FAIpQLSeYIabTyCGSOHldHE_CrbgX3qDKbjzU8euW3gb5yG765gCHYQ/formResponse";
 
+// СЮДА ВСТАВЬ ССЫЛКУ НА ОТКРЫТУЮ GOOGLE FORM
+const GOOGLE_FORM_LINK = "https://forms.gle/mbPvCnVdxECdMSwf6";
+
+// СЮДА ВСТАВЬ ПУТЬ К СТРАНИЦЕ РЕЗУЛЬТАТОВ
+const RESULTS_PAGE_LINK = "/results";
+
 const FIELD_IDS = {
   email: "entry.1412481037",
 
@@ -154,6 +160,25 @@ const initialOther = {
   profile: "",
 };
 
+function ActionButtons() {
+  return (
+    <div className="questionnaire-buttons">
+      <a
+        href={GOOGLE_FORM_LINK}
+        target="_blank"
+        rel="noreferrer"
+        className="pill-button"
+      >
+        Пройти опросник в google формах
+      </a>
+
+      <a href={RESULTS_PAGE_LINK} className="pill-button">
+        Результаты опросника
+      </a>
+    </div>
+  );
+}
+
 export default function QuestionnairePage() {
   const [formData, setFormData] = useState({
     email: "",
@@ -284,30 +309,30 @@ export default function QuestionnairePage() {
       payload.append(FIELD_IDS.email, formData.email.trim());
 
       questions.forEach((question) => {
-  const selected = formData.answers[question.key];
+        const selected = formData.answers[question.key];
 
-  if (selected === "Иное") {
-    payload.append(FIELD_IDS[question.key], "__other_option__");
-    payload.append(
-      `${FIELD_IDS[question.key]}.other_option_response`,
-      formData.otherText[question.key].trim()
-    );
-  } else {
-    payload.append(FIELD_IDS[question.key], selected);
-  }
-});
+        if (selected === "Иное") {
+          payload.append(FIELD_IDS[question.key], "__other_option__");
+          payload.append(
+            `${FIELD_IDS[question.key]}.other_option_response`,
+            formData.otherText[question.key].trim()
+          );
+        } else {
+          payload.append(FIELD_IDS[question.key], selected);
+        }
+      });
 
-formData.profile.forEach((item) => {
-  if (item === "Иное") {
-    payload.append(FIELD_IDS.profile, "__other_option__");
-    payload.append(
-      `${FIELD_IDS.profile}.other_option_response`,
-      formData.otherText.profile.trim()
-    );
-  } else {
-    payload.append(FIELD_IDS.profile, item);
-  }
-});
+      formData.profile.forEach((item) => {
+        if (item === "Иное") {
+          payload.append(FIELD_IDS.profile, "__other_option__");
+          payload.append(
+            `${FIELD_IDS.profile}.other_option_response`,
+            formData.otherText.profile.trim()
+          );
+        } else {
+          payload.append(FIELD_IDS.profile, item);
+        }
+      });
 
       await fetch(GOOGLE_FORM_ACTION, {
         method: "POST",
@@ -334,9 +359,44 @@ formData.profile.forEach((item) => {
 
           <h1>Оценка интереса к тематике семинаров</h1>
 
+          <ActionButtons />
+
           <p className="questionnaire-intro">
-            Пожалуйста, заполните форму ниже. Ответы будут отправлены в Google Form
-            и затем отобразятся на странице результатов.
+            Уважаемые коллеги! <br /><br />
+
+            Мы планируем проведение учебных семинаров и обучающих мероприятий для сотрудников и хотим сделать их максимально полезными и практичными.
+            <br />
+            Этот опрос поможет понять:<br />
+
+            - каких знаний и навыков вам не хватает в повседневной работе;<br />
+            - с какими трудностями вы сталкиваетесь при сборе, анализе и использовании информации;<br />
+            - какие темы обучения и форматы семинаров будут для вас наиболее актуальны.<br />
+
+            Опрос анонимный. Все ответы будут рассмотрены в обобщённом виде и использованы только для формирования программы будущих семинаров.
+
+            Пожалуйста, отвечайте, исходя из вашего реального рабочего опыта.
+
+            Ваше мнение напрямую повлияет на содержание обучения.<br /><br />
+
+            Спасибо за участие!<br /><br />
+
+            Құрметті әріптестер!<br /><br />
+
+            Біз қызметкерлерге арналған оқу семинарлары мен біліктілікті арттыру іс-шараларын жоспарлап отырмыз. Бұл сауалнама сол семинарларды шын мәнінде пайдалы және практикалық ету мақсатында жүргізіледі.
+            <br />
+            Сауалнама арқылы:<br />
+
+            - күнделікті жұмысыңызда қандай білім мен дағдылар жетіспейтінін;<br />
+            - ақпаратты жинау, өңдеу және пайдалану кезінде қандай қиындықтар кездесетінін;<br />
+            - қандай тақырыптар бойынша оқу семинарлары қажет екенін анықтағымыз келеді.<br />
+
+            Сауалнама анонимді. Барлық жауаптар жалпыланған түрде ғана талданып, болашақ оқу семинарларының бағдарламасын қалыптастыру үшін пайдаланылады.
+
+            Сұрақтарға өз жұмыс тәжірибеңізге сүйене отырып жауап беруіңізді сұраймыз.
+
+            Сіздің пікіріңіз оқу мазмұнын жақсартуға тікелей әсер етеді.<br /><br />
+
+            Қатысқаныңыз үшін рахмет!<br />
           </p>
 
           {success && (
@@ -441,8 +501,12 @@ formData.profile.forEach((item) => {
               <button type="submit" className="cta-button" disabled={submitting}>
                 {submitting ? "Отправка..." : "Отправить"}
               </button>
+              
             </div>
+            
           </form>
+
+          <ActionButtons />
         </div>
       </div>
     </section>
