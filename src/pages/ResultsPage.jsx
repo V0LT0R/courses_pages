@@ -318,7 +318,7 @@ function ThematicStackedCard({ data }) {
             barCategoryGap={14}
           >
             <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-            <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+            <XAxis type="number" domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} tickFormatter={(v) => `${v}%`} />
             <YAxis
               type="category"
               dataKey="shortTitle"
