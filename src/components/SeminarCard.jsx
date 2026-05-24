@@ -5,7 +5,10 @@ export default function SeminarCard({ seminar }) {
     <article className="card seminar-card">
       <img src={seminar.image} alt={seminar.title} className="card-image" />
       <div className="card-body">
-        <span className="badge">{seminar.category}</span>
+        <div className="card-badge-row">
+          <span className="badge">{seminar.category}</span>
+          {seminar.pdf ? <span className="pdf-chip">PDF</span> : null}
+        </div>
         <h3>{seminar.title}</h3>
         <p>{seminar.shortDescription}</p>
         <div className="meta-row">

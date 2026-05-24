@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
+import ProtectedRoute from './components/ProtectedRoute';
 import HomePage from './pages/HomePage';
 import SeminarsPage from './pages/SeminarsPage';
 import SeminarDetailPage from './pages/SeminarDetailPage';
@@ -8,6 +9,8 @@ import QuestionnairePage from './pages/QuestionnairePage';
 import ResultsPage from './pages/ResultsPage';
 import MaterialsPage from './pages/MaterialsPage';
 import NewsPage from './pages/NewsPage';
+import LoginPage from './pages/LoginPage';
+import CabinetPage from './pages/CabinetPage';
 
 export default function App() {
   return (
@@ -21,6 +24,10 @@ export default function App() {
         <Route path="results" element={<ResultsPage />} />
         <Route path="materials" element={<MaterialsPage />} />
         <Route path="news" element={<NewsPage />} />
+        <Route path="login" element={<LoginPage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="cabinet" element={<CabinetPage />} />
+        </Route>
       </Route>
     </Routes>
   );
