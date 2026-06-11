@@ -1,31 +1,33 @@
 {
   "name": "aquageo-seminars",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node ./node_modules/vite/bin/vite.js",
-    "build": "node ./node_modules/vite/bin/vite.js build",
-    "preview": "node ./node_modules/vite/bin/vite.js preview",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "server": "node server/index.js",
-    "seed:admin": "node server/seed-admin.js",
-    "seed:seminars": "node server/seed-seminars.js"
+    "dev:full": "concurrently \"npm run server\" \"npm run dev\""
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.2",
+    "@supabase/supabase-js": "^2.106.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "papaparse": "^5.5.3",
-    "pg": "^8.16.3",
+    "pg": "^8.21.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-is": "^19.2.7",
     "react-router-dom": "^6.28.0",
     "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.3",
+    "concurrently": "^10.0.3",
     "vite": "^5.4.10"
   }
 }

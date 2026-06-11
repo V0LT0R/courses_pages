@@ -1,5 +1,5 @@
+import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginPage() {
@@ -33,13 +33,14 @@ export default function LoginPage() {
       <div className="container narrow-container">
         <div className="card content-card">
           <p className="eyebrow dark">Вход</p>
-          <h1>Личный кабинет семинаров</h1>
-          <p>Администратор управляет пользователями и всеми семинарами. Пользователь может создавать семинары и редактировать только свои записи.</p>
+          <h1>Личный кабинет</h1>
+          <p>Студенты видят профиль и свои семинары. Менеджеры управляют своими семинарами. Админ создает менеджеров и видит пользователей.</p>
           <form className="auth-form" onSubmit={handleSubmit}>
             <label><span>Email</span><input type="email" name="email" value={form.email} onChange={handleChange} required /></label>
             <label><span>Пароль</span><input type="password" name="password" value={form.password} onChange={handleChange} required /></label>
             {error ? <div className="error-text">{error}</div> : null}
             <button type="submit" className="cta-button">{loading ? 'Входим...' : 'Войти'}</button>
+            <Link to="/signup" className="text-link">Зарегистрироваться как студент</Link>
           </form>
         </div>
       </div>

@@ -204,6 +204,122 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+
+const CERTIFICATE_SERVICE_BASE_URL = (process.env.CERTIFICATE_SERVICE_BASE_URL || 'https://nic-certificate-service.onrender.com').replace(/\/$/, '');
+const CERTIFICATE_SERVICE_API_KEY = process.env.CERTIFICATE_SERVICE_API_KEY || '';
+const CERTIFICATE_SERVICE_PATHS = (process.env.CERTIFICATE_SERVICE_PATHS || '/api/v1/certificates/issue,/certificates,/certificates/issue,/certificates/generate,/api/certificates')
+  .split(',')
+  .map((pathValue) => pathValue.trim())
+  .filter(Boolean);
+
+function normalizeCertificateBody(body = {}) {
+  return {
+    external_user_id: String(body.external_user_id || body.externalUserId || 'unknown_user'),
+    full_name: String(body.full_name || body.fullName || '').trim(),
+    course_id: String(body.course_id || body.courseId || 'course'),
+    course_name: String(body.course_name || body.courseName || body.courseTitle || '').trim(),
+    course_type: body.course_type === 'internship' || body.courseType === 'internship' ? 'internship' : 'course',
+    course_duration_hours: Number(body.course_duration_hours || body.courseDurationHours || 40),
+    score: 100,
+    completed_at: body.completed_at || body.completedAt || new Date().toISOString(),
+    language: ['ru', 'kz', 'en'].includes(String(body.language || 'ru').toLowerCase()) ? String(body.language || 'ru').toLowerCase() : 'ru',
+  };
+}
+
+
+function buildCertificateServiceUrl(value) {
+  if (!value) return '';
+  const stringValue = String(value);
+  if (/^https?:\/\//i.test(stringValue)) return stringValue;
+  return `${CERTIFICATE_SERVICE_BASE_URL}${stringValue.startsWith('/') ? stringValue : `/${stringValue}`}`;
+}
+
+function normalizeCertificateServiceResult(data = {}) {
+  const pdfUrl = buildCertificateServiceUrl(data.pdf_url || data.pdfUrl || data.certificate_url || data.certificateUrl || data.download_url || data.downloadUrl);
+  const verifyUrl = buildCertificateServiceUrl(data.verify_url || data.verifyUrl || data.verification_url || data.verificationUrl || data.url);
+
+  return {
+    ...data,
+    certificate_number: data.certificate_number || data.certificateNumber || data.number || '',
+    verify_url: verifyUrl,
+    verification_url: verifyUrl,
+    pdf_url: pdfUrl,
+    certificate_url: pdfUrl,
+    download_url: pdfUrl,
+    tx_hash: data.tx_hash || data.txHash || '',
+    issued_at: data.issued_at || data.issuedAt || '',
+    status: data.status || '',
+  };
+}
+
+async function parseCertificateResponse(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch (_error) {
+    return { raw: text };
+  }
+}
+
+app.post('/api/certificates/generate', async (req, res, next) => {
+  try {
+    if (!CERTIFICATE_SERVICE_API_KEY) {
+      return res.status(500).json({ message: 'На backend не указан CERTIFICATE_SERVICE_API_KEY в .env.' });
+    }
+
+    const payload = normalizeCertificateBody(req.body || {});
+    if (!payload.full_name) {
+      return res.status(400).json({ message: 'Не указано ФИО для сертификата.' });
+    }
+    if (!payload.course_name) {
+      return res.status(400).json({ message: 'Не указано название курса для сертификата.' });
+    }
+
+    const attempted = [];
+    let lastError = null;
+
+    for (const pathValue of CERTIFICATE_SERVICE_PATHS) {
+      const url = `${CERTIFICATE_SERVICE_BASE_URL}${pathValue.startsWith('/') ? pathValue : `/${pathValue}`}`;
+      attempted.push(url);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${CERTIFICATE_SERVICE_API_KEY}`,
+            'X-API-Key': CERTIFICATE_SERVICE_API_KEY,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await parseCertificateResponse(response);
+        if (response.ok) {
+          return res.status(201).json({ ok: true, request: payload, ...normalizeCertificateServiceResult(data) });
+        }
+
+        lastError = data?.detail || data?.message || `Certificate service returned ${response.status}`;
+
+        // 404 means this path is wrong, so try the next candidate. Other errors are real service errors.
+        if (response.status !== 404) {
+          return res.status(response.status).json({ message: lastError, request: payload, serviceResponse: data });
+        }
+      } catch (error) {
+        lastError = error.message;
+      }
+    }
+
+    res.status(502).json({
+      message: `Не удалось найти рабочий endpoint сервиса сертификатов. Последняя ошибка: ${lastError || 'unknown error'}`,
+      attempted,
+      hint: 'Проверьте CERTIFICATE_SERVICE_PATHS в .env по Swagger /docs.',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) {

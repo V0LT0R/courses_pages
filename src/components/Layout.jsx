@@ -32,7 +32,7 @@ export default function Layout() {
               Кабинет
             </NavLink>
           </nav>
-          <NavLink to={isAuthenticated ? '/cabinet' : '/login'} className="cta-button small">{isAuthenticated ? 'Управление' : 'Войти'}</NavLink>
+          <NavLink to={isAuthenticated ? '/cabinet' : '/login'} className="cta-button small">{isAuthenticated ? 'Кабинет' : 'Войти'}</NavLink>
         </div>
       </header>
       <main>

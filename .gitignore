@@ -1,6 +1,4 @@
 node_modules/
 dist/
 .env
-server/uploads/pdfs/*
-!server/uploads/pdfs/.gitkeep
 .DS_Store

@@ -8,7 +8,7 @@ export default function NewsPage() {
         <div className="section-title">
           <p className="eyebrow dark">Новости</p>
           <h1>Новости о семинарах</h1>
-          <p className="section-text">В каждой новости есть ссылка на регистрацию на соответствующий семинар.</p>
+          <p className="section-text">Новости остаются информационным разделом, а актуальная регистрация проходит через каталог семинаров.</p>
         </div>
         <div className="news-list expanded">
           {news.map((item) => (
@@ -16,7 +16,7 @@ export default function NewsPage() {
               <span className="muted">{item.date}</span>
               <h3>{item.title}</h3>
               <p>{item.description}</p>
-              <Link to={`/register/${item.seminarId}`} className="cta-button small">Регистрация</Link>
+              <Link to="/seminars" className="cta-button small">К семинарам</Link>
             </article>
           ))}
         </div>

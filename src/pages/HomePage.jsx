@@ -1,10 +1,22 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Hero from '../components/Hero';
 import SectionTitle from '../components/SectionTitle';
 import SeminarCard from '../components/SeminarCard';
-import { seminars, news, questionnaireStats } from '../data/seminars';
+import { news, questionnaireStats } from '../data/seminars';
+import { listCourses } from '../lib/courseService';
+import { useAuth } from '../context/AuthContext';
 
 export default function HomePage() {
+  const { user } = useAuth();
+  const [seminars, setSeminars] = useState([]);
+
+  useEffect(() => {
+    listCourses(user)
+      .then((items) => setSeminars(items.slice(0, 3)))
+      .catch(() => setSeminars([]));
+  }, [user?.id, user?.role]);
+
   return (
     <>
       <Hero />
@@ -19,12 +31,12 @@ export default function HomePage() {
 
           <div className="feature-grid">
             {[
-              'Опросник и отображение результатов на сайте',
-              'История семинаров и размещение PDF-материалов',
-              'Отдельные страницы курсов с описанием, лектором и сертификатом',
-              'Отзывы на каждый семинар в формате оценки курса',
-              'Новости о семинарах со ссылками на регистрацию',
-              'Окно регистрации на отдельной странице'
+              'Регистрация студентов по email и полному имени',
+              'Роли: админ, менеджер семинаров и студент',
+              'Курсы с разделами и материалами в любом порядке',
+              'YouTube видео автоматически открывается в плеере',
+              'PDF файлы загружаются в Supabase Storage и читаются на сайте',
+              'После отметки всех разделов отправляются данные для сертификата'
             ].map((item) => (
               <div className="feature-card" key={item}>{item}</div>
             ))}
@@ -35,11 +47,15 @@ export default function HomePage() {
       <section className="content-section">
         <div className="container">
           <SectionTitle eyebrow="Курсы" title="Актуальные семинары" />
-          <div className="cards-grid">
-            {seminars.map((seminar) => (
-              <SeminarCard key={seminar.id} seminar={seminar} />
-            ))}
-          </div>
+          {seminars.length ? (
+            <div className="cards-grid">
+              {seminars.map((seminar) => (
+                <SeminarCard key={seminar.uuid} seminar={seminar} />
+              ))}
+            </div>
+          ) : (
+            <div className="card content-card">После настройки Supabase здесь появятся добавленные семинары.</div>
+          )}
         </div>
       </section>
 
