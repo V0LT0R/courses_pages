@@ -3,10 +3,25 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import fs from 'fs/promises';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { pool, query } from './db.js';
 import { requireAuth, requireAdmin, signToken } from './auth.js';
+import {
+  buildMockAnchor,
+  buildUnsignedCredential,
+  canonicalize,
+  escapeHtml,
+  generateCertificatePdf,
+  makeCertificateNumber,
+  normalizeIssuePayload,
+  renderCertificateHtml,
+  sha256Hex0x,
+  signCredential,
+  toIsoZ,
+  verifySignedCredential,
+} from './certificateService.js';
 
 dotenv.config();
 
@@ -205,116 +220,235 @@ app.get('/api/health', async (_req, res) => {
 });
 
 
-const CERTIFICATE_SERVICE_BASE_URL = (process.env.CERTIFICATE_SERVICE_BASE_URL || 'https://nic-certificate-service.onrender.com').replace(/\/$/, '');
-const CERTIFICATE_SERVICE_API_KEY = process.env.CERTIFICATE_SERVICE_API_KEY || '';
-const CERTIFICATE_SERVICE_PATHS = (process.env.CERTIFICATE_SERVICE_PATHS || '/api/v1/certificates/issue,/certificates,/certificates/issue,/certificates/generate,/api/certificates')
-  .split(',')
-  .map((pathValue) => pathValue.trim())
-  .filter(Boolean);
 
-function normalizeCertificateBody(body = {}) {
+function appBaseUrl(req) {
+  const configured = process.env.CERT_BASE_URL || process.env.APP_BASE_URL;
+  if (configured) return configured.replace(/\/$/, '');
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  return `${proto}://${req.get('host')}`.replace(/\/$/, '');
+}
+
+function certificateRowToResponse(row, req) {
+  const baseUrl = appBaseUrl(req);
   return {
-    external_user_id: String(body.external_user_id || body.externalUserId || 'unknown_user'),
-    full_name: String(body.full_name || body.fullName || '').trim(),
-    course_id: String(body.course_id || body.courseId || 'course'),
-    course_name: String(body.course_name || body.courseName || body.courseTitle || '').trim(),
-    course_type: body.course_type === 'internship' || body.courseType === 'internship' ? 'internship' : 'course',
-    course_duration_hours: Number(body.course_duration_hours || body.courseDurationHours || 40),
-    score: 100,
-    completed_at: body.completed_at || body.completedAt || new Date().toISOString(),
-    language: ['ru', 'kz', 'en'].includes(String(body.language || 'ru').toLowerCase()) ? String(body.language || 'ru').toLowerCase() : 'ru',
+    certificate_number: row.certificate_number,
+    verify_url: `${baseUrl}/verify/${encodeURIComponent(row.certificate_number)}`,
+    verification_url: `${baseUrl}/verify/${encodeURIComponent(row.certificate_number)}`,
+    pdf_url: `${baseUrl}/api/certificates/${encodeURIComponent(row.certificate_number)}/pdf`,
+    certificate_url: `${baseUrl}/api/certificates/${encodeURIComponent(row.certificate_number)}/pdf`,
+    json_url: `${baseUrl}/api/certificates/${encodeURIComponent(row.certificate_number)}/json`,
+    tx_hash: row.tx_hash,
+    issued_at: row.issued_at,
+    status: row.status,
+    data_hash: row.data_hash,
   };
 }
 
-
-function buildCertificateServiceUrl(value) {
-  if (!value) return '';
-  const stringValue = String(value);
-  if (/^https?:\/\//i.test(stringValue)) return stringValue;
-  return `${CERTIFICATE_SERVICE_BASE_URL}${stringValue.startsWith('/') ? stringValue : `/${stringValue}`}`;
-}
-
-function normalizeCertificateServiceResult(data = {}) {
-  const pdfUrl = buildCertificateServiceUrl(data.pdf_url || data.pdfUrl || data.certificate_url || data.certificateUrl || data.download_url || data.downloadUrl);
-  const verifyUrl = buildCertificateServiceUrl(data.verify_url || data.verifyUrl || data.verification_url || data.verificationUrl || data.url);
-
-  return {
-    ...data,
-    certificate_number: data.certificate_number || data.certificateNumber || data.number || '',
-    verify_url: verifyUrl,
-    verification_url: verifyUrl,
-    pdf_url: pdfUrl,
-    certificate_url: pdfUrl,
-    download_url: pdfUrl,
-    tx_hash: data.tx_hash || data.txHash || '',
-    issued_at: data.issued_at || data.issuedAt || '',
-    status: data.status || '',
-  };
-}
-
-async function parseCertificateResponse(response) {
-  const text = await response.text();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch (_error) {
-    return { raw: text };
-  }
+async function findCertificate(number) {
+  const result = await query('SELECT * FROM local_certificate_records WHERE certificate_number = $1', [number]);
+  return result.rows[0] || null;
 }
 
 app.post('/api/certificates/generate', async (req, res, next) => {
   try {
-    if (!CERTIFICATE_SERVICE_API_KEY) {
-      return res.status(500).json({ message: 'На backend не указан CERTIFICATE_SERVICE_API_KEY в .env.' });
-    }
-
-    const payload = normalizeCertificateBody(req.body || {});
-    if (!payload.full_name) {
+    const payload = normalizeIssuePayload(req.body || {});
+    if (!payload.fullName) {
       return res.status(400).json({ message: 'Не указано ФИО для сертификата.' });
     }
-    if (!payload.course_name) {
+    if (!payload.courseName) {
       return res.status(400).json({ message: 'Не указано название курса для сертификата.' });
     }
 
-    const attempted = [];
-    let lastError = null;
-
-    for (const pathValue of CERTIFICATE_SERVICE_PATHS) {
-      const url = `${CERTIFICATE_SERVICE_BASE_URL}${pathValue.startsWith('/') ? pathValue : `/${pathValue}`}`;
-      attempted.push(url);
-
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${CERTIFICATE_SERVICE_API_KEY}`,
-            'X-API-Key': CERTIFICATE_SERVICE_API_KEY,
-          },
-          body: JSON.stringify(payload),
-        });
-
-        const data = await parseCertificateResponse(response);
-        if (response.ok) {
-          return res.status(201).json({ ok: true, request: payload, ...normalizeCertificateServiceResult(data) });
-        }
-
-        lastError = data?.detail || data?.message || `Certificate service returned ${response.status}`;
-
-        // 404 means this path is wrong, so try the next candidate. Other errors are real service errors.
-        if (response.status !== 404) {
-          return res.status(response.status).json({ message: lastError, request: payload, serviceResponse: data });
-        }
-      } catch (error) {
-        lastError = error.message;
-      }
+    const duplicate = await query(
+      'SELECT * FROM local_certificate_records WHERE external_user_id = $1 AND course_id = $2',
+      [payload.externalUserId, payload.courseId]
+    );
+    if (duplicate.rowCount) {
+      return res.status(200).json({ ok: true, reused: true, request: payload, ...certificateRowToResponse(duplicate.rows[0], req) });
     }
 
-    res.status(502).json({
-      message: `Не удалось найти рабочий endpoint сервиса сертификатов. Последняя ошибка: ${lastError || 'unknown error'}`,
-      attempted,
-      hint: 'Проверьте CERTIFICATE_SERVICE_PATHS в .env по Swagger /docs.',
+    const credentialUuid = crypto.randomUUID();
+    const issuedAt = new Date();
+    let certificateNumber = makeCertificateNumber();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const exists = await query('SELECT 1 FROM local_certificate_records WHERE certificate_number = $1', [certificateNumber]);
+      if (!exists.rowCount) break;
+      certificateNumber = makeCertificateNumber();
+    }
+
+    const unsignedCredential = buildUnsignedCredential({
+      credentialUuid,
+      certificateNumber,
+      externalUserId: payload.externalUserId,
+      fullName: payload.fullName,
+      courseId: payload.courseId,
+      courseName: payload.courseName,
+      courseType: payload.courseType,
+      completedAt: payload.completedAt,
+      issuedAt,
+      score: payload.score,
+      durationHours: payload.durationHours,
     });
+    const signedCredential = signCredential(unsignedCredential, issuedAt);
+    const signedJson = canonicalize(signedCredential);
+    const dataHash = sha256Hex0x(Buffer.from(signedJson, 'utf8'));
+    const anchor = buildMockAnchor(dataHash);
+
+    const insert = await query(
+      `INSERT INTO local_certificate_records (
+        id, certificate_number, external_user_id, full_name, course_id, course_name,
+        course_type, course_duration_hours, score, completed_at, issued_at, issuer,
+        language, signed_json, data_hash, tx_hash, block_number, contract_address, chain, status
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,
+        $7,$8,$9,$10,$11,$12,
+        $13,$14,$15,$16,$17,$18,$19,$20
+      )
+      ON CONFLICT (external_user_id, course_id) DO UPDATE SET
+        full_name = EXCLUDED.full_name
+      RETURNING *`,
+      [
+        credentialUuid,
+        certificateNumber,
+        payload.externalUserId,
+        payload.fullName,
+        payload.courseId,
+        payload.courseName,
+        payload.courseType,
+        payload.durationHours === null || payload.durationHours === '' ? null : Number(payload.durationHours),
+        payload.score === null || payload.score === '' ? null : Number(payload.score),
+        toIsoZ(payload.completedAt),
+        toIsoZ(issuedAt),
+        process.env.ISSUER_NAME || 'NIC Research Center',
+        payload.language,
+        signedJson,
+        dataHash,
+        anchor.txHash,
+        anchor.blockNumber,
+        anchor.contractAddress,
+        anchor.chain,
+        'active',
+      ]
+    );
+
+    res.status(201).json({ ok: true, request: payload, ...certificateRowToResponse(insert.rows[0], req) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/certificates/:number/json', async (req, res, next) => {
+  try {
+    const cert = await findCertificate(req.params.number);
+    if (!cert) return res.status(404).json({ message: 'Сертификат не найден.' });
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${cert.certificate_number}.json"`);
+    res.send(cert.signed_json);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/certificates/:number/pdf', async (req, res, next) => {
+  try {
+    const cert = await findCertificate(req.params.number);
+    if (!cert) return res.status(404).send('Сертификат не найден.');
+    const pdfBytes = await generateCertificatePdf({
+      ...cert,
+      verify_url: `${appBaseUrl(req)}/verify/${encodeURIComponent(cert.certificate_number)}`,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${cert.certificate_number}.pdf"`);
+    res.send(pdfBytes);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/v1/verify/:number', async (req, res, next) => {
+  try {
+    const cert = await findCertificate(req.params.number);
+    if (!cert) {
+      return res.json({ valid: false, status: 'not_found', certificate_number: req.params.number, reason: 'Certificate not found' });
+    }
+    const parsed = JSON.parse(cert.signed_json);
+    const signatureValid = verifySignedCredential(parsed);
+    res.json({
+      valid: cert.status === 'active' && signatureValid,
+      status: cert.status,
+      certificate_number: cert.certificate_number,
+      full_name: cert.full_name,
+      course_name: cert.course_name,
+      course_type: cert.course_type,
+      issued_at: cert.issued_at,
+      issuer: cert.issuer,
+      signature_valid: signatureValid,
+      blockchain: {
+        anchored: Boolean(cert.tx_hash),
+        chain: cert.chain,
+        tx_hash: cert.tx_hash,
+        block_number: cert.block_number,
+        revoked: cert.status === 'revoked',
+      },
+      reason: signatureValid ? null : 'invalid_signature',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/v1/verify/manual', async (req, res, next) => {
+  try {
+    const number = req.body?.certificate_number || req.body?.certificateNumber;
+    const cert = number ? await findCertificate(number) : null;
+    if (!cert) {
+      return res.status(404).json({ valid: false, status: 'not_found', certificate_number: number || null, reason: 'Certificate not found' });
+    }
+    const fullName = String(req.body?.full_name || req.body?.fullName || '').trim().toLowerCase();
+    const courseName = String(req.body?.course_name || req.body?.courseName || '').trim().toLowerCase();
+    const mismatch = (fullName && fullName !== cert.full_name.toLowerCase()) || (courseName && courseName !== cert.course_name.toLowerCase());
+    res.json({
+      valid: cert.status === 'active' && !mismatch,
+      status: mismatch ? 'data_mismatch' : cert.status,
+      certificate_number: cert.certificate_number,
+      full_name: cert.full_name,
+      course_name: cert.course_name,
+      course_type: cert.course_type,
+      issued_at: cert.issued_at,
+      issuer: cert.issuer,
+      reason: mismatch ? 'Provided name or course does not match certificate data' : null,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/issuer.json', (_req, res) => {
+  const baseUrl = (process.env.CERT_BASE_URL || `http://localhost:${process.env.PORT || 4000}`).replace(/\/$/, '');
+  res.json({
+    '@context': ['https://w3id.org/openbadges/v2'],
+    id: process.env.ISSUER_PROFILE_URL || `${baseUrl}/issuer.json`,
+    type: 'Profile',
+    name: process.env.ISSUER_NAME || 'NIC Research Center',
+    url: process.env.ISSUER_URL || 'https://nic.kz',
+    publicKey: [{
+      id: process.env.ISSUER_KEY_ID || `${baseUrl}/issuer.json#key-1`,
+      type: 'Ed25519VerificationKey2020',
+      controller: process.env.ISSUER_PROFILE_URL || `${baseUrl}/issuer.json`,
+      publicKeyBase64: process.env.ED25519_PUBLIC_KEY || 'LxuZubFprzfA7P/HJH0ljfQRXoi5WwH7jNm2MTgC9X0=',
+    }],
+  });
+});
+
+app.get('/verify/:number', async (req, res, next) => {
+  try {
+    const cert = await findCertificate(req.params.number);
+    if (!cert) {
+      return res.status(404).send(`<!doctype html><html><head><meta charset="utf-8"><title>Certificate not found</title></head><body style="font-family:Arial;padding:40px"><h1>Сертификат не найден</h1><p>${escapeHtml(req.params.number)}</p></body></html>`);
+    }
+    const html = renderCertificateHtml({ ...cert, verify_url: `${appBaseUrl(req)}/verify/${encodeURIComponent(cert.certificate_number)}` });
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
   } catch (error) {
     next(error);
   }

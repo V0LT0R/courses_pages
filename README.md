@@ -17,8 +17,8 @@ React + Vite platform for seminars/courses in a Coursera-like structure. The pro
 - PDF files and images are uploaded to Supabase Storage and displayed inside the course page.
 - A student marks every section as completed using the “Ознакомлен с разделом” button.
 - After all sections are completed, the “Получить сертификат” button appears.
-- Certificate generation is connected to `https://nic-certificate-service.onrender.com` through the local backend endpoint `POST /api/certificates/generate`, which proxies the external endpoint `POST /api/v1/certificates/issue`. The frontend never sends the certificate API key directly.
-- The generated payload contains `external_user_id`, `full_name`, `course_id`, `course_name`, `course_type`, `course_duration_hours`, `score: 100`, `completed_at`, and `language: ru`; the response fields `certificate_number`, `verify_url`, `pdf_url`, `tx_hash`, `issued_at`, and `status` are returned to the page and saved in `certificate_requests.payload`.
+- Certificate generation is integrated locally from `nic_cers`: the frontend calls the project backend endpoint `POST /api/certificates/generate`; the backend signs the certificate, stores it in PostgreSQL, returns printable certificate/verification links, and does not call an external certificate API.
+- The generated payload contains `external_user_id`, `full_name`, `course_id`, `course_name`, `course_type`, `course_duration_hours`, `score: 100`, `completed_at`, and `language: ru`; the response fields `certificate_number`, `verify_url`, `pdf_url`, `json_url`, `tx_hash`, `issued_at`, `status`, and `data_hash` are returned to the page and saved in `certificate_requests.payload`.
 
 ## Local setup
 
@@ -34,7 +34,7 @@ npm install
 cp .env.example .env
 ```
 
-3. Fill in the local backend, database, Supabase and certificate-service settings:
+3. Fill in the local backend, database, Supabase and local certificate settings:
 
 ```env
 VITE_API_URL=http://localhost:4000/api
@@ -43,8 +43,13 @@ DATABASE_URL=postgresql://postgres:password@localhost:5432/aquageo_courses
 JWT_SECRET=change-this-secret
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
-CERTIFICATE_SERVICE_BASE_URL=https://nic-certificate-service.onrender.com
-CERTIFICATE_SERVICE_API_KEY=your-certificate-service-api-key
+CERT_PREFIX=NIC
+CERT_PROJECT=WATER
+CERT_BASE_URL=http://localhost:4000
+ISSUER_NAME="NIC Research Center"
+ISSUER_URL=https://nic.kz
+ED25519_PRIVATE_KEY=your-raw-ed25519-private-key-base64
+ED25519_PUBLIC_KEY=your-raw-ed25519-public-key-base64
 ```
 
 4. In Supabase SQL Editor run:
@@ -106,26 +111,28 @@ npm run build
 ```
 
 
-## Certificate service integration
+## Integrated certificate generation
 
-The button **«Получить сертификат»** now sends the certificate request through the project backend:
+The button **«Получить сертификат»** now works without the external NIC API:
 
 1. Frontend calls `POST /api/certificates/generate`.
-2. Backend adds the Bearer API key from `.env` and calls the external certificate service.
-3. Backend calls `POST /api/v1/certificates/issue` on the external certificate service.
-4. The score is always sent as `100` because seminar/course grading is not implemented yet.
-5. After a successful response, the page shows **Скачать PDF** and **Открыть проверку** buttons.
-6. The request and external service response are stored in `certificate_requests.payload`.
+2. Backend normalizes the course completion payload.
+3. Backend creates a certificate number in the `NIC-WATER-YEAR-RANDOM` format.
+4. Backend builds a W3C-VC-style signed JSON document using Ed25519 logic adapted from `nic_cers`.
+5. Backend stores the certificate in `local_certificate_records`.
+6. The page shows **Скачать PDF** and **Открыть проверку** buttons. The “PDF” link returns a generated PDF file with a QR code that points to the verification page.
+7. The request and local certificate response are also stored in Supabase `certificate_requests.payload`.
 
-Required backend `.env` values:
+Useful local endpoints:
 
-```env
-CERTIFICATE_SERVICE_BASE_URL=https://nic-certificate-service.onrender.com
-CERTIFICATE_SERVICE_API_KEY=your-certificate-service-api-key
-CERTIFICATE_SERVICE_PATHS=/api/v1/certificates/issue,/certificates,/certificates/issue,/certificates/generate,/api/certificates
+```text
+POST /api/certificates/generate
+GET  /verify/:certificateNumber
+GET  /api/v1/verify/:certificateNumber
+GET  /api/certificates/:certificateNumber/json
+GET  /api/certificates/:certificateNumber/pdf
+GET  /issuer.json
 ```
-
-The exact Swagger endpoint is already placed first in `CERTIFICATE_SERVICE_PATHS`.
 
 Run both parts locally:
 
