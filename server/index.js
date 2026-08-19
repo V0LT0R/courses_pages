@@ -22,6 +22,7 @@ import {
   toIsoZ,
   verifySignedCredential,
 } from './certificateService.js';
+import { verifyCertificateEligibility } from './supabaseEligibility.js';
 
 dotenv.config();
 
@@ -252,12 +253,24 @@ async function findCertificate(number) {
 app.post('/api/certificates/generate', async (req, res, next) => {
   try {
     const payload = normalizeIssuePayload(req.body || {});
-    if (!payload.fullName) {
-      return res.status(400).json({ message: 'Не указано ФИО для сертификата.' });
-    }
-    if (!payload.courseName) {
-      return res.status(400).json({ message: 'Не указано название курса для сертификата.' });
-    }
+    const authorization = String(req.headers.authorization || '');
+    const accessToken = authorization.toLowerCase().startsWith('bearer ') ? authorization.slice(7).trim() : '';
+
+    const eligibility = await verifyCertificateEligibility({
+      accessToken,
+      externalUserId: payload.externalUserId,
+      courseId: payload.courseId,
+    });
+
+    // Never trust certificate identity/result fields received from the browser.
+    // Replace them with data verified against Supabase and the student's best passed attempt.
+    payload.externalUserId = eligibility.user.id;
+    payload.fullName = eligibility.profile.full_name;
+    payload.courseId = eligibility.course.slug;
+    payload.courseName = eligibility.course.title;
+    payload.durationHours = eligibility.durationHours;
+    payload.score = eligibility.score;
+    payload.completedAt = eligibility.completedAt;
 
     const duplicate = await query(
       'SELECT * FROM local_certificate_records WHERE external_user_id = $1 AND course_id = $2',

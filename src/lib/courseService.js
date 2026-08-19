@@ -1,5 +1,6 @@
 import { ensureSupabaseConfigured, supabase, withTimeout } from './supabase';
 import { sendCertificateData } from './certificateApi';
+import { getCourseTestForEdit, getCourseTestSummary, saveCourseTest } from './testService';
 
 const COURSE_BUCKET = 'course-files';
 const CACHE_TTL = 60_000;
@@ -310,8 +311,11 @@ export async function getCourseSections(courseUuid) {
 export async function getCourseForEdit(courseUuid, currentUser = null) {
   const course = await getCourseByUuid(courseUuid, currentUser);
   if (!course) throw new Error('Семинар не найден.');
-  const sections = await getCourseSections(course.uuid);
-  return { ...course, sections };
+  const [sections, test] = await Promise.all([
+    getCourseSections(course.uuid),
+    getCourseTestForEdit(course.uuid),
+  ]);
+  return { ...course, sections, test };
 }
 
 export async function getCourseForLearning(slug, currentUser) {
@@ -417,44 +421,118 @@ export async function saveCourseWithContent(payload, currentUser, existingCourse
   }
 
   const sections = payload.sections || [];
+  let existingSections = [];
 
   if (existingCourseUuid) {
-    const { error: deleteError } = await supabase
+    const { data, error } = await supabase
       .from('course_sections')
-      .delete()
+      .select('id')
       .eq('course_id', courseUuid);
-    if (deleteError) throw deleteError;
+    if (error) throw error;
+    existingSections = data || [];
+
+    const submittedIds = new Set(sections.map((section) => section.id).filter(Boolean));
+    const sectionIdsToDelete = existingSections
+      .map((section) => section.id)
+      .filter((id) => !submittedIds.has(id));
+
+    if (sectionIdsToDelete.length) {
+      const { error: deleteError } = await supabase
+        .from('course_sections')
+        .delete()
+        .in('id', sectionIdsToDelete);
+      if (deleteError) throw deleteError;
+    }
   }
+
+  const existingSectionIds = new Set(existingSections.map((section) => section.id));
 
   for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
     const section = sections[sectionIndex];
-    const { data: sectionRow, error: sectionError } = await supabase
-      .from('course_sections')
-      .insert({
-        course_id: courseUuid,
-        title: section.title || `Раздел ${sectionIndex + 1}`,
-        description: section.description || '',
-        position: sectionIndex + 1,
-      })
-      .select('*')
-      .single();
+    let sectionRow;
 
-    if (sectionError) throw sectionError;
+    if (existingCourseUuid && section.id && existingSectionIds.has(section.id)) {
+      const { data, error: sectionError } = await supabase
+        .from('course_sections')
+        .update({
+          title: section.title || `Раздел ${sectionIndex + 1}`,
+          description: section.description || '',
+          position: sectionIndex + 1,
+        })
+        .eq('id', section.id)
+        .eq('course_id', courseUuid)
+        .select('*')
+        .single();
+      if (sectionError) throw sectionError;
+      sectionRow = data;
+    } else {
+      const { data, error: sectionError } = await supabase
+        .from('course_sections')
+        .insert({
+          course_id: courseUuid,
+          title: section.title || `Раздел ${sectionIndex + 1}`,
+          description: section.description || '',
+          position: sectionIndex + 1,
+        })
+        .select('*')
+        .single();
+      if (sectionError) throw sectionError;
+      sectionRow = data;
+    }
 
     const blocks = (section.blocks || []).filter((block) => block.type && (block.content || block.title));
-    if (blocks.length) {
-      const rows = blocks.map((block, blockIndex) => ({
+    let existingBlocks = [];
+    if (existingCourseUuid && section.id && existingSectionIds.has(section.id)) {
+      const { data, error: existingBlocksError } = await supabase
+        .from('content_blocks')
+        .select('id')
+        .eq('section_id', sectionRow.id);
+      if (existingBlocksError) throw existingBlocksError;
+      existingBlocks = data || [];
+
+      const submittedBlockIds = new Set(blocks.map((block) => block.id).filter(Boolean));
+      const blockIdsToDelete = existingBlocks
+        .map((block) => block.id)
+        .filter((id) => !submittedBlockIds.has(id));
+      if (blockIdsToDelete.length) {
+        const { error: deleteBlocksError } = await supabase
+          .from('content_blocks')
+          .delete()
+          .in('id', blockIdsToDelete);
+        if (deleteBlocksError) throw deleteBlocksError;
+      }
+    }
+
+    const existingBlockIds = new Set(existingBlocks.map((block) => block.id));
+    for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+      const block = blocks[blockIndex];
+      const blockRow = {
         section_id: sectionRow.id,
         type: block.type,
         title: block.title || '',
         content: block.content || '',
         file_path: block.filePath || null,
         position: blockIndex + 1,
-      }));
+      };
 
-      const { error: blocksError } = await supabase.from('content_blocks').insert(rows);
-      if (blocksError) throw blocksError;
+      if (block.id && existingBlockIds.has(block.id)) {
+        const { error: blockUpdateError } = await supabase
+          .from('content_blocks')
+          .update(blockRow)
+          .eq('id', block.id)
+          .eq('section_id', sectionRow.id);
+        if (blockUpdateError) throw blockUpdateError;
+      } else {
+        const { error: blockInsertError } = await supabase
+          .from('content_blocks')
+          .insert(blockRow);
+        if (blockInsertError) throw blockInsertError;
+      }
     }
+  }
+
+  if (payload.test) {
+    await saveCourseTest(courseUuid, payload.test);
   }
 
   clearCourseCache();
@@ -555,7 +633,17 @@ export async function markSectionCompleted(sectionId) {
 
 export async function requestCertificate({ course, profile }) {
   ensureSupabaseConfigured();
-  const completedAt = new Date().toISOString();
+
+  const testSummary = await getCourseTestSummary(course.uuid);
+  if (!testSummary?.bestPassed) {
+    throw new Error('Сертификат доступен только после успешного прохождения итогового теста.');
+  }
+
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  if (!session?.access_token) throw new Error('Сессия истекла. Войдите в аккаунт снова.');
+
+  const completedAt = testSummary.bestAttempt?.completed_at || new Date().toISOString();
   const durationMatch = String(course.duration || '').match(/\d+(?:[.,]\d+)?/);
   const durationHours = durationMatch ? Number(durationMatch[0].replace(',', '.')) : 40;
   const payload = {
@@ -565,12 +653,12 @@ export async function requestCertificate({ course, profile }) {
     courseName: course.title,
     courseType: 'course',
     courseDurationHours: durationHours,
-    score: 100,
+    score: Number(testSummary.bestScore || 0),
     completedAt,
     language: 'ru',
   };
 
-  const certificateResponse = await sendCertificateData(payload);
+  const certificateResponse = await sendCertificateData(payload, session.access_token);
 
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError) throw userError;
@@ -578,7 +666,7 @@ export async function requestCertificate({ course, profile }) {
 
   const { error: enrollmentError } = await supabase
     .from('enrollments')
-    .update({ completed_at: completedAt, certificate_requested_at: completedAt })
+    .update({ completed_at: completedAt, certificate_requested_at: new Date().toISOString() })
     .eq('user_id', user.id)
     .eq('course_id', course.uuid);
 

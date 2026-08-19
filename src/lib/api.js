@@ -11,7 +11,8 @@ export function resolveAssetUrl(url) {
 }
 
 export async function apiRequest(path, options = {}) {
-  const token = localStorage.getItem('auth_token');
+  const { accessToken, ...fetchOptions } = options;
+  const token = accessToken || localStorage.getItem('auth_token');
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
@@ -22,7 +23,7 @@ export async function apiRequest(path, options = {}) {
   }
 
   const response = await fetch(`${API_URL}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers,
   });
 

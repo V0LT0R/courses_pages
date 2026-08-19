@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { normalizeSlug, uploadCourseImage, uploadCoursePdf } from '../lib/courseService';
+import { PASSING_SCORE_OPTIONS } from '../lib/testService';
 
 const defaultImage = 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1200&q=80';
 const defaultLecturerPhoto = 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=600&q=80';
@@ -40,6 +41,52 @@ function createBlock(type) {
     title: '',
     content: '',
     filePath: '',
+  };
+}
+
+function createTestOption(index = 0) {
+  return {
+    localId: crypto.randomUUID(),
+    text: '',
+    isCorrect: index === 0,
+  };
+}
+
+function createTestQuestion(index = 1) {
+  return {
+    localId: crypto.randomUUID(),
+    text: '',
+    options: Array.from({ length: 4 }, (_, optionIndex) => createTestOption(optionIndex)),
+    correctOptionIndex: 0,
+  };
+}
+
+function createDefaultTest() {
+  return {
+    passingScore: 70,
+    timeLimitMinutes: 10,
+    questions: Array.from({ length: 5 }, (_, index) => createTestQuestion(index + 1)),
+  };
+}
+
+function mapTest(seminar) {
+  const source = seminar?.test;
+  if (!source?.questions?.length) return createDefaultTest();
+  return {
+    passingScore: Number(source.passingScore || 70),
+    timeLimitMinutes: Number(source.timeLimitMinutes || 10),
+    questions: source.questions.map((question) => ({
+      localId: question.id || crypto.randomUUID(),
+      id: question.id,
+      text: question.text || '',
+      correctOptionIndex: Number(question.correctOptionIndex || 0),
+      options: (question.options || []).map((option, optionIndex) => ({
+        localId: option.id || crypto.randomUUID(),
+        id: option.id,
+        text: option.text || '',
+        isCorrect: optionIndex === Number(question.correctOptionIndex || 0),
+      })),
+    })),
   };
 }
 
@@ -87,6 +134,7 @@ function mapSections(seminar) {
 export default function SeminarForm({ seminar, onSubmit, onCancel, submitText }) {
   const [form, setForm] = useState(initialState);
   const [sections, setSections] = useState([createSection(1)]);
+  const [test, setTest] = useState(createDefaultTest());
   const [uploadingKey, setUploadingKey] = useState('');
   const [uploadError, setUploadError] = useState('');
   const [formError, setFormError] = useState('');
@@ -95,6 +143,7 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
   useEffect(() => {
     setForm(mapSeminarToForm(seminar));
     setSections(mapSections(seminar));
+    setTest(mapTest(seminar));
     setUploadError('');
     setUploadingKey('');
     setFormError('');
@@ -163,6 +212,78 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
     }));
   };
 
+  const updateTestSettings = (patch) => setTest((prev) => ({ ...prev, ...patch }));
+
+  const updateTestQuestion = (questionIndex, patch) => {
+    setTest((prev) => ({
+      ...prev,
+      questions: prev.questions.map((question, index) => index === questionIndex ? { ...question, ...patch } : question),
+    }));
+  };
+
+  const addTestQuestion = () => {
+    setTest((prev) => ({
+      ...prev,
+      questions: [...prev.questions, createTestQuestion(prev.questions.length + 1)],
+    }));
+  };
+
+  const removeTestQuestion = (questionIndex) => {
+    setTest((prev) => prev.questions.length <= 5 ? prev : {
+      ...prev,
+      questions: prev.questions.filter((_, index) => index !== questionIndex),
+    });
+  };
+
+  const addTestOption = (questionIndex) => {
+    setTest((prev) => ({
+      ...prev,
+      questions: prev.questions.map((question, index) => {
+        if (index !== questionIndex || question.options.length >= 6) return question;
+        return { ...question, options: [...question.options, createTestOption(question.options.length)] };
+      }),
+    }));
+  };
+
+  const removeTestOption = (questionIndex, optionIndex) => {
+    setTest((prev) => ({
+      ...prev,
+      questions: prev.questions.map((question, index) => {
+        if (index !== questionIndex || question.options.length <= 2) return question;
+        const options = question.options.filter((_, currentIndex) => currentIndex !== optionIndex);
+        let correctOptionIndex = question.correctOptionIndex;
+        if (optionIndex === correctOptionIndex) correctOptionIndex = 0;
+        else if (optionIndex < correctOptionIndex) correctOptionIndex -= 1;
+        return {
+          ...question,
+          options: options.map((option, currentIndex) => ({ ...option, isCorrect: currentIndex === correctOptionIndex })),
+          correctOptionIndex,
+        };
+      }),
+    }));
+  };
+
+  const updateTestOption = (questionIndex, optionIndex, text) => {
+    setTest((prev) => ({
+      ...prev,
+      questions: prev.questions.map((question, index) => index !== questionIndex ? question : {
+        ...question,
+        options: question.options.map((option, currentIndex) => currentIndex === optionIndex ? { ...option, text } : option),
+      }),
+    }));
+  };
+
+  const setCorrectTestOption = (questionIndex, optionIndex) => {
+    setTest((prev) => ({
+      ...prev,
+      questions: prev.questions.map((question, index) => index !== questionIndex ? question : {
+        ...question,
+        correctOptionIndex: optionIndex,
+        options: question.options.map((option, currentIndex) => ({ ...option, isCorrect: currentIndex === optionIndex })),
+      }),
+    }));
+  };
+
   const handlePdfUpload = async (sectionIndex, blockIndex, file) => {
     if (!file) return;
     const key = `${sectionIndex}-${blockIndex}`;
@@ -222,15 +343,26 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
     certificate: form.certificate,
     rating: Number(form.rating || 5),
     sections: sections.map((section) => ({
+      id: section.id,
       title: section.title.trim(),
       description: section.description.trim(),
       blocks: section.blocks.map((block) => ({
+        id: block.id,
         type: block.type,
         title: block.title.trim(),
         content: block.content.trim(),
         filePath: block.filePath,
       })),
     })),
+    test: {
+      passingScore: Number(test.passingScore),
+      timeLimitMinutes: Number(test.timeLimitMinutes),
+      questions: test.questions.map((question) => ({
+        text: question.text.trim(),
+        options: question.options.map((option) => option.text.trim()),
+        correctOptionIndex: Number(question.correctOptionIndex),
+      })),
+    },
   });
 
   const validatePayload = (payload) => {
@@ -247,6 +379,28 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
 
     payload.sections.forEach((section, index) => {
       if (!section.title) missing.push(`название раздела ${index + 1}`);
+    });
+
+    if (!PASSING_SCORE_OPTIONS.includes(payload.test.passingScore)) {
+      missing.push('проходной балл теста (60/70/80/90/100%)');
+    }
+    if (!Number.isInteger(payload.test.timeLimitMinutes) || payload.test.timeLimitMinutes <= 0) {
+      missing.push('время тестирования');
+    }
+    if (payload.test.questions.length < 5) {
+      missing.push('минимум 5 вопросов теста');
+    }
+    payload.test.questions.forEach((question, questionIndex) => {
+      if (!question.text) missing.push(`текст вопроса ${questionIndex + 1}`);
+      if (question.options.length < 2 || question.options.length > 6) {
+        missing.push(`2–6 вариантов ответа для вопроса ${questionIndex + 1}`);
+      }
+      question.options.forEach((option, optionIndex) => {
+        if (!option) missing.push(`вариант ${optionIndex + 1} вопроса ${questionIndex + 1}`);
+      });
+      if (question.correctOptionIndex < 0 || question.correctOptionIndex >= question.options.length) {
+        missing.push(`правильный ответ для вопроса ${questionIndex + 1}`);
+      }
     });
 
     return missing;
@@ -396,6 +550,90 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
 
                 {!section.blocks.length ? <div className="muted empty-block-hint">В этом разделе пока нет материалов.</div> : null}
               </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="course-builder test-builder">
+        <div className="course-builder-head">
+          <div>
+            <h3>Итоговое тестирование</h3>
+            <p>Минимум 5 вопросов. Для каждого вопроса можно добавить от 2 до 6 вариантов и выбрать один правильный ответ.</p>
+          </div>
+          <button type="button" className="cta-button small" onClick={addTestQuestion}>Добавить вопрос</button>
+        </div>
+
+        <div className="form-grid test-settings-grid">
+          <label>
+            <span>Проходной балл</span>
+            <select value={test.passingScore} onChange={(e) => updateTestSettings({ passingScore: Number(e.target.value) })}>
+              {PASSING_SCORE_OPTIONS.map((score) => <option key={score} value={score}>{score}%</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Время на тест, минут</span>
+            <input type="number" min="1" step="1" value={test.timeLimitMinutes} onChange={(e) => updateTestSettings({ timeLimitMinutes: e.target.value })} />
+          </label>
+        </div>
+
+        <div className="test-question-editor-list">
+          {test.questions.map((question, questionIndex) => (
+            <div className="section-editor-card test-question-editor" key={question.localId}>
+              <div className="section-editor-head">
+                <strong>Вопрос {questionIndex + 1}</strong>
+                <button
+                  type="button"
+                  className="ghost-inline-button small danger"
+                  onClick={() => removeTestQuestion(questionIndex)}
+                  disabled={test.questions.length <= 5}
+                >
+                  Удалить вопрос
+                </button>
+              </div>
+
+              <label className="test-question-text">
+                <span>Текст вопроса</span>
+                <textarea rows="3" value={question.text} onChange={(e) => updateTestQuestion(questionIndex, { text: e.target.value })} placeholder="Введите вопрос" />
+              </label>
+
+              <div className="test-options-editor">
+                {question.options.map((option, optionIndex) => (
+                  <div className="test-option-editor" key={option.localId}>
+                    <label className="test-correct-radio" title="Отметить правильный ответ">
+                      <input
+                        type="radio"
+                        name={`correct-${question.localId}`}
+                        checked={question.correctOptionIndex === optionIndex}
+                        onChange={() => setCorrectTestOption(questionIndex, optionIndex)}
+                      />
+                      <span>Правильный</span>
+                    </label>
+                    <input
+                      value={option.text}
+                      onChange={(e) => updateTestOption(questionIndex, optionIndex, e.target.value)}
+                      placeholder={`Вариант ответа ${optionIndex + 1}`}
+                    />
+                    <button
+                      type="button"
+                      className="ghost-inline-button small danger"
+                      onClick={() => removeTestOption(questionIndex, optionIndex)}
+                      disabled={question.options.length <= 2}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                className="ghost-inline-button small"
+                onClick={() => addTestOption(questionIndex)}
+                disabled={question.options.length >= 6}
+              >
+                + Добавить вариант ответа
+              </button>
             </div>
           ))}
         </div>
