@@ -382,20 +382,24 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active=true;
     Papa.parse(CSV_URL, {
       download: true,
       header: true,
       skipEmptyLines: true,
       complete: (result) => {
+        if(!active)return;
         setRows(result.data || []);
         setHeaders(result.meta.fields || []);
         setLoading(false);
       },
       error: (error) => {
+        if(!active)return;
         console.error("CSV parse error:", error);
         setLoading(false);
       },
     });
+    return ()=>{active=false;};
   }, []);
 
   const analytics = useMemo(() => {

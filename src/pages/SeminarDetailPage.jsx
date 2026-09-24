@@ -1,3 +1,4 @@
+import { userMessage } from '../lib/errors';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -34,7 +35,7 @@ export default function SeminarDetailPage() {
           setEnrollment(null);
         }
       } catch (err) {
-        if (active) setError(err.message);
+        if (active) setError(userMessage(err));
       } finally {
         if (active) setLoading(false);
       }
@@ -55,7 +56,7 @@ export default function SeminarDetailPage() {
       await enrollInCourse(seminar.uuid);
       navigate(`/learn/${seminar.slug}`);
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     } finally {
       setEnrolling(false);
     }

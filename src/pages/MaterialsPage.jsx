@@ -1,3 +1,4 @@
+import { userMessage } from '../lib/errors';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listCourses } from '../lib/courseService';
@@ -12,7 +13,7 @@ export default function MaterialsPage() {
   useEffect(() => {
     listCourses(user)
       .then(setSeminars)
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(userMessage(err)))
       .finally(() => setLoading(false));
   }, [user?.id, user?.role]);
 

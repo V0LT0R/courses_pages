@@ -1,6 +1,8 @@
+import { userMessage } from '../lib/errors';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import {API_ORIGIN} from '../lib/api';
 import SeminarForm from '../components/SeminarForm';
 import {
   createManager,
@@ -8,6 +10,7 @@ import {
   listCourses,
   listMyEnrollments,
   listProfiles,
+  listMyCertificates,
   saveCourseWithContent,
 } from '../lib/courseService';
 
@@ -43,7 +46,7 @@ function ProfileForm({ user, onSave }) {
       await onSave(form);
       setMessage('Профиль обновлен.');
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     } finally {
       setSaving(false);
     }
@@ -52,9 +55,9 @@ function ProfileForm({ user, onSave }) {
   return (
     <form className="seminar-form" onSubmit={handleSubmit}>
       <div className="form-grid profile-grid">
-        <label><span>ФИО</span><input name="fullName" value={form.fullName} onChange={handleChange} required /></label>
-        <label><span>Организация</span><input name="organization" value={form.organization} onChange={handleChange} placeholder="Необязательно" /></label>
-        <label><span>Телефон</span><input name="phone" value={form.phone} onChange={handleChange} placeholder="Необязательно" /></label>
+        <label><span>ФИО</span><input name="fullName" value={form.fullName} onChange={handleChange} minLength="2" maxLength="120" autoComplete="name" required /></label>
+        <label><span>Организация</span><input name="organization" value={form.organization} onChange={handleChange} maxLength="200" placeholder="Необязательно" /></label>
+        <label><span>Телефон</span><input name="phone" value={form.phone} onChange={handleChange} maxLength="50" autoComplete="tel" placeholder="Необязательно" /></label>
       </div>
       {message ? <div className="success-text">{message}</div> : null}
       {error ? <div className="error-text">{error}</div> : null}
@@ -86,9 +89,9 @@ function ManagerCreateForm({ onCreate }) {
   return (
     <form className="seminar-form" onSubmit={handleSubmit}>
       <div className="form-grid">
-        <label><span>ФИО менеджера</span><input name="fullName" value={form.fullName} onChange={handleChange} required /></label>
-        <label><span>Email</span><input name="email" type="email" value={form.email} onChange={handleChange} required /></label>
-        <label><span>Временный пароль</span><input name="password" type="password" value={form.password} onChange={handleChange} minLength="6" required /></label>
+        <label><span>ФИО менеджера</span><input name="fullName" value={form.fullName} onChange={handleChange} minLength="2" maxLength="120" autoComplete="name" required /></label>
+        <label><span>Email</span><input name="email" type="email" value={form.email} onChange={handleChange} maxLength="254" autoComplete="email" required /></label>
+        <label><span>Временный пароль</span><input name="password" type="password" value={form.password} onChange={handleChange} minLength="10" maxLength="128" autoComplete="new-password" required /></label>
       </div>
       <div className="form-actions"><button className="cta-button" type="submit" disabled={creating}>{creating ? 'Создаем...' : 'Создать менеджера'}</button></div>
     </form>
@@ -102,6 +105,7 @@ function RoleBadge({ role }) {
 
 export default function CabinetPage() {
   const { user, isAdmin, isManager, canManageSeminars, logout, saveProfile } = useAuth();
+  const [certificates,setCertificates]=useState([]);
   const [seminars, setSeminars] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [users, setUsers] = useState([]);
@@ -122,14 +126,15 @@ export default function CabinetPage() {
     setError('');
     setLoading(true);
     try {
-      const requests = [listCourses(user), listMyEnrollments(user)];
+      const requests = [listCourses(user), listMyEnrollments(user),listMyCertificates()];
       if (isAdmin) requests.push(listProfiles());
-      const [seminarsData, enrollmentsData, usersData] = await Promise.all(requests);
+      const [seminarsData, enrollmentsData, certificatesData, usersData] = await Promise.all(requests);
       setSeminars(seminarsData);
       setEnrollments(enrollmentsData);
+      setCertificates(certificatesData);
       if (isAdmin) setUsers(usersData || []);
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     } finally {
       setLoading(false);
     }
@@ -147,7 +152,7 @@ export default function CabinetPage() {
       setCreating(false);
       await loadData();
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     }
   };
 
@@ -158,7 +163,7 @@ export default function CabinetPage() {
       setEditingSeminar(null);
       await loadData();
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     }
   };
 
@@ -170,7 +175,7 @@ export default function CabinetPage() {
       setCreating(false);
       setActiveTab('seminars');
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     }
   };
 
@@ -180,7 +185,7 @@ export default function CabinetPage() {
       setMessage('Менеджер создан.');
       await loadData();
     } catch (err) {
-      setError(`${err.message}. Проверьте, что Supabase Edge Function create-manager развернута.`);
+      setError(userMessage(err));
     }
   };
 
@@ -199,6 +204,7 @@ export default function CabinetPage() {
 
           <div className="tab-row">
             <button className={`tab-button ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>Профиль</button>
+            <button className={`tab-button ${activeTab === 'certificates' ? 'active' : ''}`} onClick={() => setActiveTab('certificates')}>Мои сертификаты</button>
             <button className={`tab-button ${activeTab === 'myCourses' ? 'active' : ''}`} onClick={() => setActiveTab('myCourses')}>Мои семинары</button>
             {canManageSeminars ? <button className={`tab-button ${activeTab === 'seminars' ? 'active' : ''}`} onClick={() => setActiveTab('seminars')}>Управление курсами</button> : null}
             {isAdmin ? <button className={`tab-button ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>Пользователи</button> : null}
@@ -207,6 +213,8 @@ export default function CabinetPage() {
           {loading ? <div className="card inset-card">Загрузка данных...</div> : null}
           {message ? <div className="success-text">{message}</div> : null}
           {error ? <div className="error-text">{error}</div> : null}
+
+          {activeTab==='certificates'?<div className="admin-list">{certificates.length?certificates.map(c=><div key={c.certificate_number} className="admin-list-item card"><div><strong>{c.course_title_snapshot}</strong><p>{c.certificate_number} · {new Date(c.issued_at).toLocaleDateString('ru-RU')}</p><p>{c.status==='revoked'?'Отозван':'Действителен'}</p></div><a className="text-link" href={`${API_ORIGIN}/verify/${c.certificate_number}`} target="_blank" rel="noreferrer">Открыть сертификат</a></div>):<p>Выданных сертификатов пока нет.</p>}</div>:null}
 
           {activeTab === 'profile' ? (
             <div className="card inset-card">

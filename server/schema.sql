@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS local_certificate_records (
   tx_hash TEXT,
   block_number INTEGER,
   contract_address TEXT,
-  chain TEXT NOT NULL DEFAULT 'polygon:amoy',
+  chain TEXT NOT NULL DEFAULT 'local:ed25519-sha256',
   status TEXT NOT NULL DEFAULT 'active',
   revoked_at TIMESTAMPTZ,
   revoked_reason TEXT,
@@ -63,3 +63,23 @@ CREATE TABLE IF NOT EXISTS local_certificate_records (
 
 CREATE INDEX IF NOT EXISTS idx_local_certificates_number ON local_certificate_records(certificate_number);
 CREATE INDEX IF NOT EXISTS idx_local_certificates_user_course ON local_certificate_records(external_user_id, course_id);
+
+
+-- Defense-in-depth constraints for local authentication/certificate storage.
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_uidx ON users (lower(email));
+
+ALTER TABLE users
+  DROP CONSTRAINT IF EXISTS users_name_length_chk,
+  DROP CONSTRAINT IF EXISTS users_email_length_chk,
+  ADD CONSTRAINT users_name_length_chk CHECK (char_length(btrim(name)) BETWEEN 2 AND 120) NOT VALID,
+  ADD CONSTRAINT users_email_length_chk CHECK (char_length(btrim(email)) BETWEEN 3 AND 254) NOT VALID;
+
+ALTER TABLE local_certificate_records
+  DROP CONSTRAINT IF EXISTS local_certificate_records_status_chk,
+  DROP CONSTRAINT IF EXISTS local_certificate_records_language_chk,
+  DROP CONSTRAINT IF EXISTS local_certificate_records_score_chk,
+  DROP CONSTRAINT IF EXISTS local_certificate_records_duration_chk,
+  ADD CONSTRAINT local_certificate_records_status_chk CHECK (status IN ('active', 'revoked')) NOT VALID,
+  ADD CONSTRAINT local_certificate_records_language_chk CHECK (language IN ('ru', 'kz', 'en')) NOT VALID,
+  ADD CONSTRAINT local_certificate_records_score_chk CHECK (score IS NULL OR (score >= 0 AND score <= 100)) NOT VALID,
+  ADD CONSTRAINT local_certificate_records_duration_chk CHECK (course_duration_hours IS NULL OR course_duration_hours >= 0) NOT VALID;

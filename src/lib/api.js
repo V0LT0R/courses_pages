@@ -1,5 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
-const API_ORIGIN = API_URL.replace(/\/api\/?$/, '');
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_ORIGIN = API_URL.replace(/\/api\/?$/, '') || '';
 
 export { API_URL, API_ORIGIN };
 
@@ -12,7 +12,7 @@ export function resolveAssetUrl(url) {
 
 export async function apiRequest(path, options = {}) {
   const { accessToken, ...fetchOptions } = options;
-  const token = accessToken || localStorage.getItem('auth_token');
+  const token = accessToken || '';
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
@@ -22,10 +22,17 @@ export async function apiRequest(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...fetchOptions,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...fetchOptions,
+      signal: options.signal || AbortSignal.timeout(25000),
+      headers,
+    });
+  } catch (error) {
+    if(error.name==='AbortError')throw error;
+    throw new Error('Сервис временно недоступен. Повторите попытку позже.', {cause:error});
+  }
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -34,25 +41,3 @@ export async function apiRequest(path, options = {}) {
   return data;
 }
 
-export async function uploadPdfFile(file) {
-  const token = localStorage.getItem('auth_token');
-  const formData = new FormData();
-  formData.append('pdf', file);
-
-  const headers = {};
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_URL}/uploads/pdf`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.message || 'Не удалось загрузить PDF файл');
-  }
-  return data;
-}

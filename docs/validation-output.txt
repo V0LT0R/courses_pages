@@ -1,0 +1,108 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> aquageo-seminars@2.0.0 verify:release
+> npm run preflight && npm run lint && npm run scan:release && npm test && npm run sql:check && npm run build
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> aquageo-seminars@2.0.0 preflight
+> node scripts/preflight.mjs
+
+CONFIG REQUIRED before launch: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+PASS source/environment preflight (configuration notices above must be resolved before launch)
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> aquageo-seminars@2.0.0 lint
+> eslint .
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> aquageo-seminars@2.0.0 scan:release
+> node scripts/release-scan.mjs
+
+PASS release scan: JS syntax, browser injection patterns, secret variable names and registry URLs
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> aquageo-seminars@2.0.0 test
+> node --test tests/unit/*.test.mjs tests/http/*.test.mjs tests/database/*.test.mjs
+
+✔ public registration cannot promote user_metadata.role (3425.621678ms)
+✔ student cannot update role or call admin RPC (8.465449ms)
+✔ course + sections + test save atomically (18.145911ms)
+✔ idempotent enrollment and progress are unique (204.263742ms)
+✔ foreign progress and unearned certificates are blocked (10.059514ms)
+✔ repeated start reuses one active attempt (26.578691ms)
+✔ correct answers are invisible to students (5.230009ms)
+✔ duplicate questions and foreign options rejected without consuming attempt (14.344166ms)
+✔ score is computed in DB; replay and foreign attempt rejected (9.741464ms)
+✔ certificate snapshots immutable; repeat after name change returns same certificate (55.82109ms)
+✔ expired attempt cannot pass even with all correct answers (6.56964ms)
+✔ optimistic concurrency token required; deleting used section rolls back (16.879371ms)
+✔ all-or-nothing migration replay preserves certificates/results (53.744098ms)
+✔ anon cannot read private materials or certificates; direct storage upload denied (3.298014ms)
+✔ supplied previous schema migrates without losing course/user/progress/history (3402.663183ms)
+✔ health/readiness are separate probes (43.58606ms)
+✔ missing/invalid JWT receive 401 (15.97137ms)
+✔ untrusted CORS origin receives 403 (5.43743ms)
+✔ malformed UUID and oversized request rejected (7.398831ms)
+✔ certificate uses gateway snapshot and strips input fields (4.302414ms)
+✔ public verification displays persisted certificate and PDF link (17.639565ms)
+✔ public JSON does not expose private identity (3.110187ms)
+✔ concurrent PDF requests share a single render (67.594227ms)
+✔ student cannot upload a file or create manager (7.002263ms)
+✔ unsafe certificate paths and HTML input rejected (2.259075ms)
+✔ safeHttpUrl allows HTTP(S) and relative links only (1.112727ms)
+✔ normalizeEmail trims and lowercases (0.174493ms)
+✔ student registration rejects malformed email and weak password (0.359542ms)
+✔ student registration normalizes valid input without mutating password (1.394011ms)
+✔ development CORS includes local Vite origins and deduplicates configured origins (6.048416ms)
+✔ CORS rejects an untrusted browser origin (0.618773ms)
+✔ request IDs are generated safely and unsafe incoming IDs are ignored (1.25449ms)
+✔ security headers include the principal browser hardening headers (0.454796ms)
+✔ rate limiter returns 429 after the configured limit (1.025296ms)
+✔ signature validation rejects MIME spoof and accepts PDF signature (1.122702ms)
+✔ path traversal, malformed UUID and unsafe public origins rejected (0.438421ms)
+✔ public snapshot excludes private keys even if database record has them (0.144167ms)
+✔ manager validation disallows weak passwords (0.231579ms)
+✔ errors do not reveal schema cache, SQL or Supabase instructions (0.514475ms)
+✔ HTML escapes certificate text and reflects revocation (26.060236ms)
+✔ PDF bytes are deterministic and include no hours (197.181886ms)
+✔ option pagination does not lose records above Supabase row cap (1.085727ms)
+✔ YouTube links are converted to privacy-enhanced embed URLs (1.787113ms)
+✔ non-YouTube and script URLs are rejected (0.205269ms)
+ℹ tests 44
+ℹ suites 0
+ℹ pass 44
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4014.073505
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> aquageo-seminars@2.0.0 sql:check
+> node scripts/sql-check.mjs
+
+PASS supabase/full_schema.sql
+PASS supabase/migrate_existing_database.sql
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> aquageo-seminars@2.0.0 build
+> node scripts/preflight.mjs && vite build
+
+CONFIG REQUIRED before launch: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+PASS source/environment preflight (configuration notices above must be resolved before launch)
+vite v8.3.0 building client environment for production...
+transforming...
+✓ 653 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                               0.80 kB │ gzip:   0.44 kB
+dist/assets/index-D6o667UT.css               27.96 kB │ gzip:   6.41 kB
+dist/assets/CourseLearningPage-DmXwnySM.js   15.56 kB │ gzip:   4.77 kB
+dist/assets/QuestionnairePage-D24dUyKe.js    23.82 kB │ gzip:   6.56 kB
+dist/assets/CabinetPage-BFqIT-8D.js          28.98 kB │ gzip:   7.11 kB
+dist/assets/ResultsPage-BGreIMTS.js         401.32 kB │ gzip: 117.72 kB
+dist/assets/index-DrYYxY6O.js               434.20 kB │ gzip: 124.55 kB
+
+✓ built in 342ms

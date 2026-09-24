@@ -1,182 +1,45 @@
-# AQUAGEO.KZ — Supabase seminars platform
+# AQUAGEO — семинары и тренинги, версия 2
 
-React + Vite platform for seminars/courses in a Coursera-like structure. The project now uses Supabase for Auth, Postgres database, Row Level Security and Storage for PDF/image materials.
+Полный React/Express проект с Supabase Auth/PostgreSQL/Storage. Код изменён и проверен локально. Допуск к production требует применения SQL на staging и проверки реальной конфигурации Auth/Storage/SMTP/домена. Результаты выполненных проверок находятся в `VALIDATION_REPORT.md`; требования и границы защиты — в `SECURITY.md`.
 
-## Main features
+## Быстрый запуск
 
-- Student registration with email, password and full name.
-- Email uniqueness check before registration through Supabase RPC.
-- Roles: `admin`, `manager`, `student`.
-- Students cannot see course management/admin tabs.
-- Student cabinet: profile editing and list of enrolled seminars.
-- Admin cabinet: manager creation and user list.
-- Manager cabinet: create and edit own seminars.
-- Course structure: sections with content blocks in any order.
-- Supported content blocks: text, YouTube link, PDF file, image/photo.
-- YouTube links are rendered as embedded video players.
-- PDF files and images are uploaded to Supabase Storage and displayed inside the course page.
-- A student marks every section as completed using the “Ознакомлен с разделом” button.
-- After all sections are completed, the “Получить сертификат” button appears.
-- Certificate generation is integrated locally from `nic_cers`: the frontend calls the project backend endpoint `POST /api/certificates/generate`; the backend signs the certificate, stores it in PostgreSQL, returns printable certificate/verification links, and does not call an external certificate API.
-- The generated payload contains `external_user_id`, `full_name`, `course_id`, `course_name`, `course_type`, `course_duration_hours`, `score: 100`, `completed_at`, and `language: ru`; the response fields `certificate_number`, `verify_url`, `pdf_url`, `json_url`, `tx_hash`, `issued_at`, `status`, and `data_hash` are returned to the page and saved in `certificate_requests.payload`.
+1. Установите Node.js 22.12+ (рекомендуется поддерживаемая версия 24.x).
+2. Для существующей базы: резервная копия → **целиком** `supabase/migrate_existing_database.sql` в Supabase SQL Editor → `supabase/verify_database.sql`. Для новой базы вместо миграции используйте `supabase/full_schema.sql`.
+3. Скопируйте `.env.example` в `.env`, заполните Supabase URL, публичный ключ и серверный service_role/secret key. Для локальной разработки оставьте PUBLIC_APP_URL и CERT_BASE_URL равными `http://localhost:5173`.
+4. Выполните `npm ci`, `npm run verify:release`, `npm run dev`. Откройте `http://localhost:5173`. На Windows можно использовать `INSTALL_AND_CHECK.bat`, затем `START_DEV.bat`.
+5. В Supabase Auth задайте Site URL и redirect URL `http://localhost:5173/reset-password`, включите email confirmation и настройте SMTP. В production замените их своим HTTPS-доменом.
 
-## Local setup
+Сервер больше не требует DATABASE_URL, JWT_SECRET или Ed25519-ключи. Не помещайте service_role/secret key в VITE_*: frontend-переменные доступны посетителям. Vite использует только публичные VITE_ значения; backend-only секреты держите исключительно в окружении Node. Не копируйте исходный `.env` целиком поверх нового примера.
 
-1. Install dependencies:
+## Организация и первый администратор
 
-```bash
-npm install
-```
-
-2. Create `.env` from example:
-
-```bash
-cp .env.example .env
-```
-
-3. Fill in the local backend, database, Supabase and local certificate settings:
-
-```env
-VITE_API_URL=http://localhost:4000/api
-PORT=4000
-DATABASE_URL=postgresql://postgres:password@localhost:5432/aquageo_courses
-JWT_SECRET=change-this-secret
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-CERT_PREFIX=NIC
-CERT_PROJECT=WATER
-CERT_BASE_URL=http://localhost:4000
-ISSUER_NAME="NIC Research Center"
-ISSUER_URL=https://nic.kz
-ED25519_PRIVATE_KEY=your-raw-ed25519-private-key-base64
-ED25519_PUBLIC_KEY=your-raw-ed25519-public-key-base64
-```
-
-4. In Supabase SQL Editor run:
-
-```text
-supabase/schema.sql
-```
-
-5. In Supabase Auth settings disable required email confirmation if you want registration to log users in immediately.
-
-6. Create the first admin:
-
-- Register normally on `/signup`.
-- Run this SQL in Supabase SQL Editor:
+Зарегистрируйте свой аккаунт через `/signup`, подтвердите email. В SQL Editor выполните с вашим email:
 
 ```sql
-update public.profiles
-set role = 'admin'
-where email = 'your-email@example.com';
+update public.profiles set role='admin' where email='YOUR_EMAIL';
+update public.app_settings set issuer_name='Название вашей организации' where id=true;
 ```
 
-7. Deploy the Edge Function for creating managers:
+Затем выйдите и войдите. Организация сохраняется в сертификат на момент выдачи. Ранее выданные сертификаты не меняются. Менеджеров создаёт администратор в кабинете; отдельная Edge Function не нужна. Удалите ранее развёрнутую `create-manager` Edge Function (см. MIGRATION_GUIDE).
 
-```bash
-supabase functions deploy create-manager
-```
+## Сценарий
 
-The function code is located here:
+Администратор/менеджер создаёт курс, разделы, материалы и итоговый тест (5–200 вопросов, 2–6 вариантов, один правильный, 1–480 минут; проходной балл 60/70/80/90/100). Студент записывается, подтверждает ознакомление, сдаёт тест и получает сертификат. Лимит: 10 новых попыток за скользящие 24 часа. Повторное начало возобновляет действующую попытку. Повторный запрос сертификата возвращает уже выданный номер. Список сертификатов доступен в кабинете.
 
-```text
-supabase/functions/create-manager/index.ts
-```
+Публичный `/verify/{номер}` показывает данные и сам сертификат со ссылкой на PDF; QR ведёт туда же. PDF формируется без часов, со встроенным шрифтом и сохранённым снимком ФИО/семинара/оценки/даты. ФИО заполняет участник; проверки паспорта нет.
 
-8. Run the frontend and backend together:
+## Старые сертификаты
 
-```bash
-npm run dev:full
-```
+Если прежняя версия уже выдавала сертификаты в `local_certificate_records`, сначала выполните перенос по `MIGRATION_GUIDE.md`. Один SQL в Supabase не может прочитать вашу отдельную старую БД. Утилита `scripts/import-legacy-certificates.mjs` работает сначала в dry-run, затем с `--apply`. Не открывайте новую выдачу до завершения переноса, иначе появятся конфликты с прежними номерами.
 
-Or run them in two terminals:
+## Файлы
 
-```bash
-npm run server
-npm run dev
-```
+- `MIGRATION_GUIDE.md` — порядок обновления и отката.
+- `TESTING.md` — unit/integration/security/concurrency/smoke/load.
+- `DEPLOYMENT.md`, `DEPLOYMENT_SECURITY.md` — Node, reverse proxy, HTTPS, Supabase, DDoS.
+- `ARCHITECTURE.md`, `SECURITY.md`, `CHANGELOG.md` — решения, аудит и изменения.
+- `supabase/source/` — исходники SQL; `npm run sql:build` обновляет два итоговых SQL-файла.
+- `compose.test.yml` — отдельный PostgreSQL для конкурентных тестов, без постоянного тома.
 
-The certificate button calls the local backend at `http://localhost:4000/api/certificates/generate`, so the backend must be running.
-
-## Important Supabase Storage note
-
-The SQL file creates a public Storage bucket named `course-files` for PDF and image materials. Managers and admins can upload PDF/image files. Students can open material URLs after they get access to course content through enrollment.
-
-If you already ran the old schema before image blocks were added, run the updated `supabase/schema.sql` again in SQL Editor. It adds the `image` content block type and updates the Storage bucket allowed MIME types.
-
-## Build
-
-```bash
-npm run build
-```
-
-
-## Integrated certificate generation
-
-The button **«Получить сертификат»** now works without the external NIC API:
-
-1. Frontend calls `POST /api/certificates/generate`.
-2. Backend normalizes the course completion payload.
-3. Backend creates a certificate number in the `NIC-WATER-YEAR-RANDOM` format.
-4. Backend builds a W3C-VC-style signed JSON document using Ed25519 logic adapted from `nic_cers`.
-5. Backend stores the certificate in `local_certificate_records`.
-6. The page shows **Скачать PDF** and **Открыть проверку** buttons. The “PDF” link returns a generated PDF file with a QR code that points to the verification page.
-7. The request and local certificate response are also stored in Supabase `certificate_requests.payload`.
-
-Useful local endpoints:
-
-```text
-POST /api/certificates/generate
-GET  /verify/:certificateNumber
-GET  /api/v1/verify/:certificateNumber
-GET  /api/certificates/:certificateNumber/json
-GET  /api/certificates/:certificateNumber/pdf
-GET  /issuer.json
-```
-
-Run both parts locally:
-
-```bash
-npm install
-npm run dev:full
-```
-
-If you see `ERR_CONNECTION_REFUSED` for `http://localhost:4000/api/...`, it means the backend process is not running or it failed to start because `DATABASE_URL` is missing/incorrect.
-
-## Итоговое тестирование курсов
-
-В проект добавлен модуль итогового тестирования:
-
-- минимум 5 вопросов на курс;
-- 2–6 вариантов ответа на вопрос, один правильный;
-- проходной балл: 60%, 70%, 80%, 90% или 100%;
-- время задаёт создатель курса;
-- тест открывается только после отметки «Ознакомлен» для всех разделов;
-- порядок вопросов и вариантов перемешивается при каждой попытке;
-- количество попыток не ограничено, сохраняются история и лучший результат;
-- правильные ответы не отправляются в браузер студента;
-- сертификат выдаётся только после завершения материалов и успешного теста;
-- backend повторно проверяет право на сертификат через Supabase.
-
-### Обязательное обновление существующей базы Supabase
-
-Если проект уже был создан ранее, откройте **Supabase Dashboard → SQL Editor**, создайте новый запрос, вставьте содержимое файла:
-
-`supabase/test_migration.sql`
-
-и выполните его один раз.
-
-Для нового чистого проекта можно выполнить полный `supabase/schema.sql` — модуль тестирования уже включён в него.
-
-### Запуск
-
-После обновления базы:
-
-```bash
-npm install
-npm run dev:full
-```
-
-Frontend: `http://localhost:5173`
-
-Backend: `http://localhost:4000`
+Не запускайте SQL из `tests/fixtures/`: это предыдущая схема только для автоматического теста миграции. Старые названия SQL в `supabase/` оставлены как явно неисполняемые указатели на новую миграцию.

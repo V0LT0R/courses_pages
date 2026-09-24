@@ -1,3 +1,4 @@
+import { userMessage } from '../lib/errors';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -27,7 +28,7 @@ export default function SignupPage() {
       await registerStudent({ fullName: form.fullName, email: form.email, password: form.password });
       navigate('/cabinet');
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     } finally {
       setLoading(false);
     }
@@ -41,10 +42,10 @@ export default function SignupPage() {
           <h1>Создать аккаунт студента</h1>
           <p>Студент может записываться на семинары, смотреть свои курсы, отмечать разделы и отправлять данные для сертификата.</p>
           <form className="auth-form" onSubmit={handleSubmit}>
-            <label><span>ФИО</span><input name="fullName" value={form.fullName} onChange={handleChange} required /></label>
-            <label><span>Email</span><input type="email" name="email" value={form.email} onChange={handleChange} required /></label>
-            <label><span>Пароль</span><input type="password" name="password" value={form.password} onChange={handleChange} minLength="6" required /></label>
-            <label><span>Повторите пароль</span><input type="password" name="passwordRepeat" value={form.passwordRepeat} onChange={handleChange} minLength="6" required /></label>
+            <label><span>ФИО</span><input name="fullName" value={form.fullName} onChange={handleChange} minLength="2" maxLength="120" autoComplete="name" required /></label>
+            <label><span>Email</span><input type="email" name="email" value={form.email} onChange={handleChange} maxLength="254" autoComplete="email" required /></label>
+            <label><span>Пароль</span><input type="password" name="password" value={form.password} onChange={handleChange} minLength="8" maxLength="128" autoComplete="new-password" required /></label>
+            <label><span>Повторите пароль</span><input type="password" name="passwordRepeat" value={form.passwordRepeat} onChange={handleChange} minLength="8" maxLength="128" autoComplete="new-password" required /></label>
             {error ? <div className="error-text">{error}</div> : null}
             <button type="submit" className="cta-button">{loading ? 'Создаем...' : 'Зарегистрироваться'}</button>
             <Link to="/login" className="text-link">У меня уже есть аккаунт</Link>

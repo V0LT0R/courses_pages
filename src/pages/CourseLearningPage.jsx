@@ -1,9 +1,11 @@
+import { userMessage } from '../lib/errors';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getCourseForLearning, markSectionCompleted, requestCertificate } from '../lib/courseService';
+import { getCourseForLearning, markSectionCompleted, requestCertificate, getMyCourseCertificate } from '../lib/courseService';
 import { getAttemptQuestions, getCourseTestSummary, startCourseTest, submitCourseTest } from '../lib/testService';
 import { getYoutubeEmbedUrl } from '../lib/youtube';
+import { safeHttpUrl } from '../lib/security';
 
 const TEST_TAB = '__testing__';
 
@@ -42,6 +44,7 @@ function ContentBlock({ block }) {
 
   if (block.type === 'youtube') {
     const embedUrl = getYoutubeEmbedUrl(block.content);
+    if (!embedUrl) return <div className="pdf-empty-state"><strong>Некорректная YouTube ссылка</strong></div>;
     return (
       <div className="learning-block video-learning-block">
         {block.title ? <h3>{block.title}</h3> : null}
@@ -58,7 +61,8 @@ function ContentBlock({ block }) {
   }
 
   if (block.type === 'pdf') {
-    const viewerUrl = block.content && !block.content.includes('#') ? `${block.content}#toolbar=1&navpanes=0&scrollbar=1` : block.content;
+    const resourceUrl = safeHttpUrl(block.content);
+    const viewerUrl = resourceUrl && !resourceUrl.includes('#') ? `${resourceUrl}#toolbar=1&navpanes=0&scrollbar=1` : resourceUrl;
     return (
       <div className="learning-block pdf-learning-block">
         <div className="pdf-card-head">
@@ -66,9 +70,9 @@ function ContentBlock({ block }) {
             <span className="badge">PDF</span>
             <h3>{block.title || 'PDF материал'}</h3>
           </div>
-          {block.content ? <a className="cta-button small" href={block.content} target="_blank" rel="noreferrer">Открыть отдельно</a> : null}
+          {resourceUrl ? <a className="cta-button small" href={resourceUrl} target="_blank" rel="noreferrer">Открыть отдельно</a> : null}
         </div>
-        {block.content ? (
+        {resourceUrl ? (
           <div className="seminar-pdf-viewer course-pdf-viewer">
             <iframe title={block.title || 'PDF'} src={viewerUrl} />
           </div>
@@ -80,11 +84,12 @@ function ContentBlock({ block }) {
   }
 
   if (block.type === 'image') {
+    const resourceUrl = safeHttpUrl(block.content);
     return (
       <div className="learning-block image-learning-block">
         {block.title ? <h3>{block.title}</h3> : null}
-        {block.content ? (
-          <img className="learning-image" src={block.content} alt={block.title || 'Фото материала'} />
+        {resourceUrl ? (
+          <img className="learning-image" src={resourceUrl} alt={block.title || 'Фото материала'} />
         ) : (
           <div className="pdf-empty-state"><strong>Фото не прикреплено</strong></div>
         )}
@@ -98,6 +103,7 @@ function ContentBlock({ block }) {
 export default function CourseLearningPage() {
   const { seminarId } = useParams();
   const { user } = useAuth();
+  const loadGeneration=useRef(0);
   const [course, setCourse] = useState(null);
   const [sections, setSections] = useState([]);
   const [progress, setProgress] = useState([]);
@@ -132,29 +138,34 @@ export default function CourseLearningPage() {
   const activeQuestion = testQuestions[testQuestionIndex] || null;
   const allCompleted = sections.length > 0 && sections.every((section) => completedSectionIds.has(section.id));
   const progressPercent = sections.length ? Math.round((completedSectionIds.size / sections.length) * 100) : 0;
-  const certificateEligible = Boolean(allCompleted && testSummary?.bestPassed && course?.certificate);
+  const certificateEligible = Boolean(certificateResult?.certificate_number || (allCompleted && testSummary?.bestPassed && course?.certificate));
   const isTestingTab = activeItemId === TEST_TAB;
 
   const loadCourse = async () => {
+    const generation=++loadGeneration.current;
     setLoading(true);
     setError('');
     try {
       const data = await getCourseForLearning(seminarId, user);
-      const summary = await getCourseTestSummary(data.course.uuid);
+      const [summary,savedCertificate] = await Promise.all([getCourseTestSummary(data.course.uuid),getMyCourseCertificate(data.course.uuid)]);
+      if(generation!==loadGeneration.current)return;
+      setCertificateResult(savedCertificate);
       setCourse(data.course);
       setSections(data.sections);
       setProgress(data.progress);
       setTestSummary(summary);
       setActiveItemId((prev) => prev || data.sections[0]?.id || TEST_TAB);
     } catch (err) {
-      setError(err.message);
+      if(generation===loadGeneration.current)setError(userMessage(err));
     } finally {
-      setLoading(false);
+      if(generation===loadGeneration.current)setLoading(false);
     }
   };
 
   useEffect(() => {
+    setCourse(null);setSections([]);setProgress([]);setTestAttempt(null);setTestQuestions([]);setCertificateResult(null);setActiveItemId('');
     loadCourse();
+    return ()=>{loadGeneration.current++;};
   }, [seminarId, user?.id, user?.role]);
 
   const handleCompleteSection = async () => {
@@ -168,7 +179,7 @@ export default function CourseLearningPage() {
       await loadCourse();
       setMessage('Раздел отмечен как ознакомленный.');
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     } finally {
       setWorking(false);
     }
@@ -186,7 +197,7 @@ export default function CourseLearningPage() {
       setMessage('Сертификат успешно выпущен. Теперь его можно скачать или открыть страницу проверки.');
       await loadCourse();
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     } finally {
       setWorking(false);
     }
@@ -218,7 +229,7 @@ export default function CourseLearningPage() {
       autoSubmitTriedRef.current = false;
       submitInProgressRef.current = false;
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     } finally {
       setTestWorking(false);
     }
@@ -248,7 +259,7 @@ export default function CourseLearningPage() {
         setMessage(`Результат: ${result.score}%. Проходной балл не набран. Тест можно пройти снова.`);
       }
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     } finally {
       setTestWorking(false);
       submitInProgressRef.current = false;

@@ -1,3 +1,4 @@
+import { userMessage } from '../lib/errors';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -22,7 +23,7 @@ export default function LoginPage() {
       await login(form.email, form.password);
       navigate('/cabinet');
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     } finally {
       setLoading(false);
     }
@@ -39,7 +40,8 @@ export default function LoginPage() {
             <label><span>Email</span><input type="email" name="email" value={form.email} onChange={handleChange} required /></label>
             <label><span>Пароль</span><input type="password" name="password" value={form.password} onChange={handleChange} required /></label>
             {error ? <div className="error-text">{error}</div> : null}
-            <button type="submit" className="cta-button">{loading ? 'Входим...' : 'Войти'}</button>
+            <button type="submit" className="cta-button" disabled={loading}>{loading ? 'Входим...' : 'Войти'}</button>
+            <Link to="/forgot-password" className="text-link">Забыли пароль?</Link>
             <Link to="/signup" className="text-link">Зарегистрироваться как студент</Link>
           </form>
         </div>

@@ -401,7 +401,7 @@ export default function QuestionnairePage() {
 
           {success && (
             <div className="success-message">
-              Спасибо! Ответ успешно отправлен.
+              Запрос на отправку выполнен. Получение ответа формой не подтверждено. При необходимости воспользуйтесь исходной Google-формой.
             </div>
           )}
 

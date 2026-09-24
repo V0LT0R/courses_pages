@@ -1,0 +1,40 @@
+# Include within nginx http {}. Replace domain, paths and certificate filenames.
+limit_req_zone $binary_remote_addr zone=aquageo_api:10m rate=10r/s;
+limit_conn_zone $binary_remote_addr zone=aquageo_connections:10m;
+server {
+ listen 80;
+ server_name courses.example.com;
+ return 301 https://$host$request_uri;
+}
+server {
+ listen 443 ssl;
+ server_name courses.example.com;
+ ssl_certificate /etc/letsencrypt/live/courses.example.com/fullchain.pem;
+ ssl_certificate_key /etc/letsencrypt/live/courses.example.com/privkey.pem;
+ root /srv/aquageo/dist;
+ client_max_body_size 25m;
+ client_body_timeout 30s;
+ client_header_timeout 15s;
+ keepalive_timeout 15s;
+ limit_conn aquageo_connections 20;
+ add_header X-Content-Type-Options nosniff always;
+ add_header Referrer-Policy no-referrer always;
+ add_header Strict-Transport-Security "max-age=31536000" always;
+ location ~ ^/(api/|verify/|health$|readiness$) {
+  limit_req zone=aquageo_api burst=30 nodelay;
+  proxy_pass http://127.0.0.1:4000;
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  # Overwrite untrusted forwarded headers: only nginx is trusted by Node.
+  proxy_set_header X-Forwarded-For $remote_addr;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_connect_timeout 5s;
+  proxy_read_timeout 35s;
+  proxy_send_timeout 35s;
+  proxy_cache off;
+ }
+ location /assets/ { try_files $uri =404; expires 1y; add_header Cache-Control "public, immutable"; }
+ location ~ /\. { deny all; }
+ location / { try_files $uri $uri/ /index.html; add_header Cache-Control "no-cache"; }
+ # Add a tested site-specific frontend CSP here; see DEPLOYMENT_SECURITY.md.
+}

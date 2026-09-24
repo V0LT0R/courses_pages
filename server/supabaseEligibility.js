@@ -50,6 +50,10 @@ export async function verifyCertificateEligibility({ accessToken, externalUserId
     .eq('id', authUser.id)
     .single();
   if (profileError || !profile) throw httpError('Профиль пользователя не найден.', 403);
+  const trustedFullName = String(profile.full_name || '').trim().replace(/\s+/g, ' ');
+  if (trustedFullName.length < 2 || trustedFullName.length > 120) {
+    throw httpError('Имя в профиле должно содержать от 2 до 120 символов.', 400);
+  }
 
   const identifier = String(courseId || '').trim();
   if (!identifier) throw httpError('Не указан курс.', 400);
@@ -62,6 +66,10 @@ export async function verifyCertificateEligibility({ accessToken, externalUserId
   courseQuery = uuidLike ? courseQuery.eq('id', identifier) : courseQuery.eq('slug', identifier);
   const { data: course, error: courseError } = await courseQuery.maybeSingle();
   if (courseError || !course) throw httpError('Курс не найден.', 404);
+  const trustedCourseTitle = String(course.title || '').trim();
+  if (!trustedCourseTitle || trustedCourseTitle.length > 300) {
+    throw httpError('Название курса некорректно для выпуска сертификата.', 400);
+  }
   if (!course.certificate) throw httpError('Для этого курса выдача сертификата отключена.', 403);
 
   const { data: enrollment, error: enrollmentError } = await supabase
@@ -105,6 +113,7 @@ export async function verifyCertificateEligibility({ accessToken, externalUserId
     .eq('user_id', authUser.id)
     .eq('course_id', course.id)
     .eq('passed', true)
+    .eq('timed_out', false)
     .not('completed_at', 'is', null)
     .order('score', { ascending: false })
     .order('completed_at', { ascending: false })
@@ -116,8 +125,8 @@ export async function verifyCertificateEligibility({ accessToken, externalUserId
 
   return {
     user: authUser,
-    profile,
-    course,
+    profile: { ...profile, full_name: trustedFullName },
+    course: { ...course, title: trustedCourseTitle },
     score: Number(bestAttempt.score || 0),
     completedAt: bestAttempt.completed_at,
     durationHours: parseDurationHours(course.duration),

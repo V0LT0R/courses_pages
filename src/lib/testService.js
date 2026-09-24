@@ -1,3 +1,4 @@
+import {selectAll} from './pagination';
 import { ensureSupabaseConfigured, supabase, withTimeout } from './supabase';
 
 export const PASSING_SCORE_OPTIONS = [60, 70, 80, 90, 100];
@@ -32,11 +33,7 @@ export async function getCourseTestForEdit(courseUuid) {
   let answers = [];
   if (questionIds.length) {
     const [{ data: optionRows, error: optionsError }, { data: answerRows, error: answersError }] = await Promise.all([
-      supabase
-        .from('test_options')
-        .select('*')
-        .in('question_id', questionIds)
-        .order('position', { ascending: true }),
+      selectAll(()=>supabase.from('test_options').select('*').in('question_id',questionIds).order('position').order('id')).then(data=>({data})),
       supabase
         .from('test_question_answers')
         .select('*')
@@ -77,30 +74,6 @@ export async function getCourseTestForEdit(courseUuid) {
   };
 }
 
-export async function saveCourseTest(courseUuid, test) {
-  ensureSupabaseConfigured();
-  const questions = (test?.questions || []).map((question) => ({
-    text: String(question.text || '').trim(),
-    options: (question.options || []).map((option) => String(typeof option === 'string' ? option : option?.text || '').trim()),
-    correctOptionIndex: Number(question.correctOptionIndex),
-  }));
-
-  const { data, error } = await supabase.rpc('save_course_test', {
-    check_course_id: courseUuid,
-    check_passing_score: Number(test?.passingScore || 70),
-    check_time_limit_minutes: Number(test?.timeLimitMinutes || 10),
-    check_questions: questions,
-  });
-
-  if (error) {
-    if (/function .*save_course_test|schema cache|course_tests/i.test(error.message || '')) {
-      throw new Error('Модуль тестирования еще не установлен в Supabase. Выполните файл supabase/test_migration.sql в Supabase SQL Editor.');
-    }
-    throw error;
-  }
-  return Array.isArray(data) ? data[0] : data;
-}
-
 export async function getCourseTestSummary(courseUuid) {
   ensureSupabaseConfigured();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -129,10 +102,14 @@ export async function getCourseTestSummary(courseUuid) {
 
   if (attemptsError) throw attemptsError;
   const completedAttempts = attempts || [];
-  const bestAttempt = completedAttempts.reduce((best, attempt) => {
+  const pickHighestScore = (items) => items.reduce((best, attempt) => {
     if (!best) return attempt;
     return Number(attempt.score || 0) > Number(best.score || 0) ? attempt : best;
   }, null);
+  const bestAttempt = pickHighestScore(completedAttempts);
+  const bestPassedAttempt = pickHighestScore(
+    completedAttempts.filter((attempt) => attempt.passed && !attempt.timed_out)
+  );
 
   return {
     id: test.id,
@@ -143,8 +120,9 @@ export async function getCourseTestSummary(courseUuid) {
     questionCount: test.question_count,
     attemptCount: completedAttempts.length,
     bestScore: bestAttempt?.score ?? null,
-    bestPassed: Boolean(bestAttempt?.passed),
+    bestPassed: Boolean(bestPassedAttempt),
     bestAttempt,
+    bestPassedAttempt,
   };
 }
 
@@ -153,7 +131,14 @@ export async function startCourseTest(courseUuid) {
   const { data, error } = await supabase.rpc('start_course_test', {
     check_course_id: courseUuid,
   });
-  if (error) throw error;
+  if (error) {
+    const message = String(error.message || '');
+    const code = String(error.code || '');
+    if (code === 'PGRST202' || /start_course_test|schema cache/i.test(message)) {
+      throw new Error('База Supabase не обновлена до версии этого проекта. Выполните supabase/APPLY_EXISTING_DB_SECURITY_UPDATE.sql.');
+    }
+    throw error;
+  }
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error('Не удалось создать попытку тестирования.');
   return {
@@ -181,13 +166,7 @@ export async function getAttemptQuestions(attempt) {
   if (!questionRows.length) throw new Error('В тесте нет доступных вопросов.');
 
   const questionIds = questionRows.map((question) => question.id);
-  const { data: options, error: optionsError } = await supabase
-    .from('test_options')
-    .select('*')
-    .in('question_id', questionIds)
-    .order('position', { ascending: true });
-
-  if (optionsError) throw optionsError;
+  const options=await selectAll(()=>supabase.from('test_options').select('*').in('question_id',questionIds).order('position').order('id'));
   const optionsByQuestion = new Map();
   (options || []).forEach((option) => {
     const list = optionsByQuestion.get(option.question_id) || [];
@@ -213,7 +192,14 @@ export async function submitCourseTest(attemptId, answers) {
     check_attempt_id: attemptId,
     check_answers: payload,
   });
-  if (error) throw error;
+  if (error) {
+    const message = String(error.message || '');
+    const code = String(error.code || '');
+    if (code === 'PGRST202' || /submit_course_test|schema cache/i.test(message)) {
+      throw new Error('База Supabase не обновлена до версии этого проекта. Выполните supabase/APPLY_EXISTING_DB_SECURITY_UPDATE.sql.');
+    }
+    throw error;
+  }
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error('Не удалось получить результат тестирования.');
 

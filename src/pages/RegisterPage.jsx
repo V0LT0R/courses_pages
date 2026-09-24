@@ -1,3 +1,4 @@
+import { userMessage } from '../lib/errors';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -21,7 +22,7 @@ export default function RegisterPage() {
         setSeminar(course);
         if (!course) setError('Семинар не найден.');
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(userMessage(err)))
       .finally(() => setLoading(false));
   }, [seminarId, user?.id, user?.role]);
 
@@ -58,7 +59,7 @@ export default function RegisterPage() {
       }
       await enrollAndGo(seminar.uuid, seminar.slug);
     } catch (err) {
-      setError(err.message);
+      setError(userMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -81,7 +82,7 @@ export default function RegisterPage() {
               Вы вошли как <strong>{user?.fullName || user?.name}</strong>. Нажмите кнопку ниже, чтобы записаться на семинар.
             </div>
           ) : (
-            <p className="muted">Создайте аккаунт студента. Email проверяется на уникальность, а полное имя потом используется для отправки данных на сертификат.</p>
+            <p className="muted">Создайте аккаунт студента. Email используется для входа, а полное имя — для персонализации профиля и сертификата.</p>
           )}
 
           <form className="register-form" onSubmit={handleSubmit}>
@@ -89,19 +90,19 @@ export default function RegisterPage() {
               <div className="form-grid">
                 <label>
                   <span>ФИО</span>
-                  <input name="fullName" type="text" value={form.fullName} onChange={handleChange} placeholder="Введите полное имя" required />
+                  <input name="fullName" type="text" value={form.fullName} onChange={handleChange} placeholder="Введите полное имя" minLength="2" maxLength="120" autoComplete="name" required />
                 </label>
                 <label>
                   <span>Email</span>
-                  <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="name@example.com" required />
+                  <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="name@example.com" maxLength="254" autoComplete="email" required />
                 </label>
                 <label>
                   <span>Пароль</span>
-                  <input name="password" type="password" value={form.password} onChange={handleChange} minLength="6" required />
+                  <input name="password" type="password" value={form.password} onChange={handleChange} minLength="8" maxLength="128" autoComplete="new-password" required />
                 </label>
                 <label>
                   <span>Повторите пароль</span>
-                  <input name="passwordRepeat" type="password" value={form.passwordRepeat} onChange={handleChange} minLength="6" required />
+                  <input name="passwordRepeat" type="password" value={form.passwordRepeat} onChange={handleChange} minLength="8" maxLength="128" autoComplete="new-password" required />
                 </label>
               </div>
             ) : null}

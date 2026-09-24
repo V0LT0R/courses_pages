@@ -1,6 +1,8 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ensureSupabaseConfigured, supabase, withTimeout } from '../lib/supabase';
-import { getCurrentProfile, isEmailTaken, updateMyProfile } from '../lib/courseService';
+import { getCurrentProfile, updateMyProfile, clearCourseCache } from '../lib/courseService';
+import { userMessage } from '../lib/errors';
+import { normalizeEmail, validateStudentRegistration } from '../lib/security';
 
 const AuthContext = createContext(null);
 
@@ -11,7 +13,7 @@ function buildFallbackProfile(authUser) {
     name: authUser.user_metadata?.full_name || authUser.user_metadata?.fullName || authUser.email,
     fullName: authUser.user_metadata?.full_name || authUser.user_metadata?.fullName || authUser.email,
     email: authUser.email,
-    role: authUser.app_metadata?.role || authUser.user_metadata?.role || 'student',
+    role: 'student',
     organization: '',
     phone: '',
     createdAt: authUser.created_at,
@@ -19,25 +21,31 @@ function buildFallbackProfile(authUser) {
 }
 
 export function AuthProvider({ children }) {
+  const generation = useRef(0);
+  const mounted = useRef(true);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = async (fallbackAuthUser = null) => {
+    const current = ++generation.current;
     try {
       const profile = await getCurrentProfile();
-      const finalProfile = profile || buildFallbackProfile(fallbackAuthUser);
-      setUser(finalProfile);
+      const {data:{session}}=await supabase.auth.getSession();
+      const finalProfile = session?.user ? (profile?.id===session.user.id?profile:buildFallbackProfile(session.user)) : null;
+      if(mounted.current && current===generation.current)setUser(finalProfile);
       return finalProfile;
     } catch (err) {
       console.error('Profile load error:', err);
-      const fallback = buildFallbackProfile(fallbackAuthUser);
-      setUser(fallback);
+      const {data:{session}}=await supabase.auth.getSession();
+      const fallback = buildFallbackProfile(session?.user);
+      if(mounted.current && current===generation.current)setUser(fallback);
       return fallback;
     }
   };
 
   useEffect(() => {
     let active = true;
+    mounted.current=true;
 
     async function init() {
       try {
@@ -65,13 +73,15 @@ export function AuthProvider({ children }) {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
 
+      generation.current++;
+      clearCourseCache();
       if (!session?.user) {
         setUser(null);
         setLoading(false);
         return;
       }
 
-      setUser(buildFallbackProfile(session.user));
+      setUser(previous=>previous?.id===session.user.id?previous:buildFallbackProfile(session.user));
       setLoading(false);
 
       setTimeout(() => {
@@ -81,6 +91,8 @@ export function AuthProvider({ children }) {
 
     return () => {
       active = false;
+      mounted.current=false;
+      generation.current++;
       listener?.subscription?.unsubscribe();
     };
   }, []);
@@ -97,39 +109,44 @@ export function AuthProvider({ children }) {
       ensureSupabaseConfigured();
       const { data, error } = await withTimeout(
         supabase.auth.signInWithPassword({
-          email: String(email || '').toLowerCase().trim(),
+          email: normalizeEmail(email),
           password,
         }),
         'Supabase Auth не отвечает. Проверьте интернет, ключи в .env и что проект Supabase активен.'
       );
-      if (error) throw new Error(error.message || 'Не удалось войти.');
+      if (error) throw new Error(userMessage(error));
       return loadProfile(data.user);
     },
     async registerStudent({ fullName, email, password }) {
       ensureSupabaseConfigured();
-      const normalizedEmail = String(email || '').toLowerCase().trim();
-      const taken = await isEmailTaken(normalizedEmail);
-      if (taken) {
-        throw new Error('Пользователь с таким email уже зарегистрирован.');
-      }
+      const validated = validateStudentRegistration({ fullName, email, password });
+      if (validated.errors.length) throw new Error(validated.errors[0]);
 
       const { data, error } = await withTimeout(
         supabase.auth.signUp({
-          email: normalizedEmail,
-          password,
+          email: validated.email,
+          password: validated.password,
           options: {
             data: {
-              full_name: fullName,
+              full_name: validated.fullName,
             },
           },
         }),
         'Supabase Auth не отвечает. Проверьте интернет, ключи в .env и что проект Supabase активен.'
       );
 
-      if (error) throw new Error(error.message || 'Не удалось зарегистрироваться.');
+      if (error) {
+        const duplicateLike = /already|registered|exists/i.test(error.message || '');
+        throw new Error(duplicateLike
+          ? 'Не удалось создать новый аккаунт. Если этот email уже использовался, войдите через форму входа.'
+          : (error.message || 'Не удалось зарегистрироваться.'));
+      }
+      if (!data.user || data.user.identities?.length === 0) {
+        throw new Error('Не удалось создать новый аккаунт. Если этот email уже использовался, войдите через форму входа.');
+      }
 
       if (!data.session) {
-        throw new Error('Аккаунт создан, но вход не выполнен. Отключите подтверждение email в Supabase Auth или войдите через форму входа.');
+        throw new Error('Аккаунт создан. Подтвердите email, если подтверждение включено, затем войдите через форму входа.');
       }
 
       return loadProfile(data.user);
@@ -140,7 +157,10 @@ export function AuthProvider({ children }) {
       return updated;
     },
     async logout() {
-      await supabase.auth.signOut();
+      generation.current++;
+      clearCourseCache();
+      const {error}=await supabase.auth.signOut();
+      if(error)throw new Error(userMessage(error));
       setUser(null);
     },
   }), [user, loading]);

@@ -1,6 +1,8 @@
+import { userMessage } from '../lib/errors';
 import { useEffect, useMemo, useState } from 'react';
 import { normalizeSlug, uploadCourseImage, uploadCoursePdf } from '../lib/courseService';
 import { PASSING_SCORE_OPTIONS } from '../lib/testService';
+import { safeHttpUrl } from '../lib/security';
 
 const defaultImage = 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1200&q=80';
 const defaultLecturerPhoto = 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=600&q=80';
@@ -297,7 +299,7 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
         filePath: uploaded.path,
       });
     } catch (err) {
-      setUploadError(err.message);
+      setUploadError(userMessage(err));
     } finally {
       setUploadingKey('');
     }
@@ -316,13 +318,14 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
         filePath: uploaded.path,
       });
     } catch (err) {
-      setUploadError(err.message);
+      setUploadError(userMessage(err));
     } finally {
       setUploadingKey('');
     }
   };
 
   const buildPayload = () => ({
+    expectedUpdatedAt: seminar?.updatedAt || null,
     title: form.title.trim(),
     slug: generatedSlug,
     category: form.category.trim(),
@@ -422,7 +425,7 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
     try {
       await onSubmit(payload);
     } catch (err) {
-      setFormError(err.message || 'Не удалось сохранить семинар.');
+      setFormError(userMessage(err) || 'Не удалось сохранить семинар.');
     } finally {
       setSubmitting(false);
     }
@@ -521,7 +524,7 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
                           <label htmlFor={`pdf-${section.localId}-${block.localId}`} className="pdf-upload-button">
                             {uploadingKey === `${sectionIndex}-${blockIndex}` ? 'Загрузка...' : 'Загрузить PDF'}
                           </label>
-                          {block.content ? <a className="text-link" href={block.content} target="_blank" rel="noreferrer">Открыть файл</a> : <span className="muted">Файл не выбран</span>}
+                          {block.content ? <a className="text-link" href={safeHttpUrl(block.content)} target="_blank" rel="noreferrer">Открыть файл</a> : <span className="muted">Файл не выбран</span>}
                         </div>
                       </div>
                     ) : null}
@@ -540,9 +543,9 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
                           <label htmlFor={`image-${section.localId}-${block.localId}`} className="pdf-upload-button">
                             {uploadingKey === `image-${sectionIndex}-${blockIndex}` ? 'Загрузка...' : 'Загрузить фото'}
                           </label>
-                          {block.content ? <a className="text-link" href={block.content} target="_blank" rel="noreferrer">Открыть фото</a> : <span className="muted">Фото не выбрано</span>}
+                          {block.content ? <a className="text-link" href={safeHttpUrl(block.content)} target="_blank" rel="noreferrer">Открыть фото</a> : <span className="muted">Фото не выбрано</span>}
                         </div>
-                        {block.content ? <img className="builder-image-preview" src={block.content} alt={block.title || 'Фото материала'} /> : null}
+                        {block.content ? <img className="builder-image-preview" src={safeHttpUrl(block.content)} alt={block.title || 'Фото материала'} /> : null}
                       </div>
                     ) : null}
                   </div>
