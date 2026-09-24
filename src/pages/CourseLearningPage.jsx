@@ -1,3 +1,5 @@
+import TestQuestion from '../components/TestQuestion';
+import { answerPayload } from '../lib/testQuestions';
 import { userMessage } from '../lib/errors';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -21,7 +23,7 @@ function shuffle(items) {
 function shuffleTestQuestions(questions) {
   return shuffle(questions.map((question) => ({
     ...question,
-    options: shuffle(question.options || []),
+    options: question.type === 'true_false' ? question.options : shuffle(question.options || []),
   })));
 }
 
@@ -138,8 +140,9 @@ export default function CourseLearningPage() {
   const activeQuestion = testQuestions[testQuestionIndex] || null;
   const allCompleted = sections.length > 0 && sections.every((section) => completedSectionIds.has(section.id));
   const progressPercent = sections.length ? Math.round((completedSectionIds.size / sections.length) * 100) : 0;
-  const certificateEligible = Boolean(certificateResult?.certificate_number || (allCompleted && testSummary?.bestPassed && course?.certificate));
-  const isTestingTab = activeItemId === TEST_TAB;
+  const certificateEligible = Boolean(certificateResult?.certificate_number || (allCompleted && testSummary?.enabled && testSummary?.bestPassed && course?.certificate));
+  const hasTest = Boolean(testSummary?.enabled);
+  const isTestingTab = activeItemId === TEST_TAB && (hasTest || testAttempt);
 
   const loadCourse = async () => {
     const generation=++loadGeneration.current;
@@ -212,7 +215,7 @@ export default function CourseLearningPage() {
       setError('Для начала тестирования необходимо ознакомиться со всеми разделами курса.');
       return;
     }
-    if (!testSummary) {
+    if (!testSummary?.enabled) {
       setError('Создатель курса еще не настроил итоговый тест.');
       return;
     }
@@ -308,6 +311,7 @@ export default function CourseLearningPage() {
         <aside className="card learning-sidebar">
           <Link to={`/seminars/${course.slug}`} className="text-link">← Описание семинара</Link>
           <h2>{course.title}</h2>
+          <p>{course.certificate ? 'С сертификатом после успешного теста' : 'Без итогового теста и сертификата'}</p>
           <div className="progress-mini">
             <div className="progress-mini-head"><span>Материалы курса</span><strong>{progressPercent}%</strong></div>
             <div className="progress-track"><div className="progress-fill" style={{ width: `${progressPercent}%` }} /></div>
@@ -329,20 +333,21 @@ export default function CourseLearningPage() {
               );
             })}
 
-            <button
+            {(hasTest || testAttempt) && <button
               type="button"
               className={`learning-section-button testing-sidebar-button ${isTestingTab ? 'active' : ''} ${!allCompleted ? 'locked' : ''}`}
               onClick={() => setActiveItemId(TEST_TAB)}
             >
               <span>{testSummary?.bestPassed ? '✓' : !allCompleted ? '🔒' : 'T'}</span>
               <strong>Тестирование</strong>
-            </button>
+            </button>}
           </div>
         </aside>
 
         <main className="card learning-content-card">
           {error ? <div className="error-text">{error}</div> : null}
           {message ? <div className="success-text">{message}</div> : null}
+          {allCompleted && !hasTest && !testAttempt && <div className="success-text">Семинар завершён. Вы ознакомились со всеми материалами. Сертификат не предусмотрен.</div>}
           {certificateResult ? (
             <div className="certificate-result-card">
               <div>
@@ -380,7 +385,7 @@ export default function CourseLearningPage() {
                     <div className="test-info-card"><span>Вопросов</span><strong>{testSummary.questionCount}</strong></div>
                     <div className="test-info-card"><span>Время</span><strong>{testSummary.timeLimitMinutes} мин.</strong></div>
                     <div className="test-info-card"><span>Для прохождения</span><strong>{testSummary.passingScore}%</strong></div>
-                    <div className="test-info-card"><span>Попытки</span><strong>Без ограничений</strong></div>
+                    <div className="test-info-card"><span>Попытки</span><strong>10 за 24 часа</strong></div>
                   </div>
 
                   {testSummary.bestScore !== null ? (
@@ -420,26 +425,7 @@ export default function CourseLearningPage() {
                         </div>
                       </div>
 
-                      <div className="test-question-card">
-                        <h2>{activeQuestion.text}</h2>
-                        <div className="student-test-options">
-                          {activeQuestion.options.map((option, optionIndex) => {
-                            const selected = testAnswers[activeQuestion.id] === option.id;
-                            return (
-                              <label className={`student-test-option ${selected ? 'selected' : ''}`} key={option.id}>
-                                <input
-                                  type="radio"
-                                  name={`question-${activeQuestion.id}`}
-                                  checked={selected}
-                                  onChange={() => selectTestAnswer(activeQuestion.id, option.id)}
-                                />
-                                <span className="student-option-letter">{String.fromCharCode(65 + optionIndex)}</span>
-                                <strong>{option.text}</strong>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      <TestQuestion question={activeQuestion} value={testAnswers[activeQuestion.id]} onChange={answer => selectTestAnswer(activeQuestion.id, answer)} disabled={testWorking} />
 
                       <div className="test-navigation-actions">
                         <button
@@ -450,7 +436,7 @@ export default function CourseLearningPage() {
                         >
                           ← Назад
                         </button>
-                        <span>Отвечено: {Object.keys(testAnswers).length} / {testQuestions.length}</span>
+                        <span>Отвечено: {answerPayload(testAnswers).length} / {testQuestions.length}</span>
                         {testQuestionIndex < testQuestions.length - 1 ? (
                           <button
                             type="button"

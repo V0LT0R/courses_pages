@@ -17,3 +17,17 @@ test('public JSON does not expose private identity',async()=>{const r=await fetc
 test('concurrent PDF requests share a single render',async()=>{rendered=0;const responses=await Promise.all(Array.from({length:20},()=>fetch(url+'/api/certificates/'+cert.certificate_number+'/pdf')));for(const r of responses)assert.equal(r.status,200);assert.equal(rendered,1);});
 test('student cannot upload a file or create manager',async()=>{for(const route of ['/api/uploads/course-file','/api/admin/managers']){const r=await fetch(url+route,{method:'POST',headers:{Authorization:'Bearer valid','Content-Type':'application/octet-stream'},body:Buffer.from('bad')});assert.equal(r.status,403);}});
 test('unsafe certificate paths and HTML input rejected',async()=>{const r=await fetch(url+'/api/v1/verify/'+encodeURIComponent('<script>alert(1)</script>'));assert.equal(r.status,400);});
+
+test('revoked PDF bypasses the saved active PDF without overwriting the original',async()=>{
+ const originalFind=gateway.find,originalGet=gateway.getPdf,originalSave=gateway.savePdf;
+ let read=0,saved=0;
+ gateway.find=async()=>({...cert,status:'revoked'});
+ gateway.getPdf=async()=>{read++;return {pdf_base64:Buffer.from('old active PDF').toString('base64')};};
+ gateway.savePdf=async()=>{saved++;};
+ try {
+  const before=rendered;
+  const response=await fetch(url+'/api/certificates/'+cert.certificate_number+'/pdf');
+  assert.equal(response.status,200);assert.equal(await response.text(),'%PDF-test');
+  assert.equal(rendered,before+1);assert.equal(read,0);assert.equal(saved,0);
+ } finally {gateway.find=originalFind;gateway.getPdf=originalGet;gateway.savePdf=originalSave;}
+});

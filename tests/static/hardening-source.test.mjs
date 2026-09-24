@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
-const migration = read('supabase/security_hardening_2026.sql');
+const migration = read('supabase/migrate_existing_database.sql');
 const serverSecurity = read('server/security.js');
 const serverIndex = read('server/index.js');
 
@@ -33,7 +33,8 @@ test('database migration contains concurrency and integrity protections', () => 
 test('backend does not contain an insecure fallback JWT secret or wildcard CORS', () => {
   assert.doesNotMatch(serverSecurity, /dev_secret/i);
   assert.doesNotMatch(serverIndex, /origin\s*:\s*['"]\*['"]/i);
-  assert.match(serverSecurity, /JWT_SECRET must be at least 32 characters/i);
+  assert.match(read('server/gateway.js'), /auth\.getUser\(token\)/);
+  assert.doesNotMatch(serverIndex, /jwt\.decode/);
 });
 
 test('React source avoids direct HTML injection/eval primitives', () => {
@@ -59,16 +60,16 @@ test('.gitignore protects local secrets and generated dependencies', () => {
 
 test('enroll RPC frontend argument matches PostgreSQL function argument', () => {
   const courseService = read('src/lib/courseService.js');
-  const migration = read('supabase/fix_enroll_rpc.sql');
-  assert.match(courseService, /rpc\(['\"]enroll_in_course['\"],\s*\{\s*check_course_id:\s*courseUuid/s);
+  const migration = read('supabase/migrate_existing_database.sql');
+  assert.match(courseService, /rpc\(['"]enroll_in_course['"],\s*\{\s*check_course_id:\s*courseUuid/s);
   assert.match(migration, /function\s+public\.enroll_in_course\(check_course_id\s+uuid\)/i);
-  assert.match(migration, /notify\s+pgrst,\s*['\"]reload schema['\"]/i);
+  assert.match(migration, /notify\s+pgrst,\s*['"]reload schema['"]/i);
 });
 
 
 test('course progress RPC repair matches frontend and reloads PostgREST schema', () => {
   const courseService = read('src/lib/courseService.js');
-  const repair = read('supabase/fix_course_progress_rpc.sql');
+  const repair = read('supabase/migrate_existing_database.sql');
   assert.match(courseService, /rpc\(['"]mark_section_completed['"],\s*\{\s*check_section_id:\s*sectionId/s);
   assert.match(repair, /function\s+public\.mark_section_completed\(check_section_id\s+uuid\)/i);
   assert.match(repair, /function\s+public\.finalize_course_completion\(check_course_id\s+uuid\)/i);
@@ -76,7 +77,7 @@ test('course progress RPC repair matches frontend and reloads PostgREST schema',
 });
 
 test('hardening migration has no duplicated VALUES statement in section progress insert', () => {
-  const migration = read('supabase/security_hardening_2026.sql');
+  const migration = read('supabase/migrate_existing_database.sql');
   assert.doesNotMatch(
     migration,
     /values\s*\(auth\.uid\(\),\s*check_section_id,\s*true,\s*clock_timestamp\(\)\)\s*values\s*\(/i

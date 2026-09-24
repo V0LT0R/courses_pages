@@ -37,6 +37,7 @@ export function managerInput(body={}) {
 export function publicCertificate(row) {
   return {certificate_number:certificateNumber(row.certificate_number),full_name:row.full_name_snapshot??row.full_name,
     course_name:row.course_title_snapshot??row.course_name,score:row.score_snapshot??row.score??null,
+    academic_hours:row.academic_hours_snapshot??row.academic_hours??null,city:row.city_snapshot??row.city??null,template_version:row.template_version??2,
     issuer:row.issuer_snapshot??row.issuer,issued_at:row.issued_at,status:row.status||'active',language:'ru',course_type:'course'};
 }
 export function publicBaseUrl(env=process.env) {

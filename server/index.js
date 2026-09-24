@@ -4,7 +4,10 @@ import { createGateway } from './gateway.js';
 const gateway=createGateway();
 const app=createApp({gateway});
 const port=Number(process.env.PORT||4000);
-const server=app.listen(port,process.env.HOST||'127.0.0.1',()=>console.log(JSON.stringify({event:'listening',port})));
+const server=app.listen(port,process.env.HOST||'127.0.0.1',(error)=>{
+ if(error){console.error(JSON.stringify({event:'startup_error',port,code:error.code||'LISTEN_FAILED'}));process.exitCode=1;return;}
+ console.log(JSON.stringify({event:'listening',port}));
+});
 server.requestTimeout=30000;
 server.headersTimeout=15000;
 server.keepAliveTimeout=5000;

@@ -109,6 +109,7 @@ function cleanName(value, fieldName) {
     );
   }
 
+  // eslint-disable-next-line no-control-regex -- reject control characters in names
   if (/[\x00-\x1F<>]/.test(cleaned)) {
     throw new Error(
       `Поле «${fieldName}» содержит недопустимые символы.`
@@ -121,6 +122,7 @@ function cleanName(value, fieldName) {
 function createSafeFileName(fullName) {
   const safeName = fullName
     .normalize("NFC")
+    // eslint-disable-next-line no-control-regex -- sanitize filesystem names
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, "")
     .replace(/\s+/g, " ")
     .replace(/[. ]+$/g, "")

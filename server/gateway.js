@@ -34,7 +34,7 @@ export function createGateway(env=process.env) {
       return publicCertificate(Array.isArray(data)?data[0]:data);
     },
     async find(number) {
-      const row=check(await admin.from('certificates').select('certificate_number,full_name_snapshot,course_title_snapshot,score_snapshot,issuer_snapshot,issued_at,status').eq('certificate_number',number).maybeSingle());
+      const row=check(await admin.from('certificates').select('certificate_number,full_name_snapshot,course_title_snapshot,score_snapshot,issuer_snapshot,academic_hours_snapshot,city_snapshot,template_version,issued_at,status').eq('certificate_number',number).maybeSingle());
       if(row)return publicCertificate(row);
       const legacy=check(await admin.from('legacy_certificates').select('record').eq('certificate_number',number).maybeSingle());
       return legacy?publicCertificate(legacy.record):null;
@@ -60,6 +60,6 @@ export function createGateway(env=process.env) {
       // The auth.users trigger inserts the trusted role/profile in the same database transaction.
       return {ok:true,user:{id:data.user.id,email:data.user.email,role:'manager'}};
     },
-    async ready(){return check(await admin.rpc('app_readiness'))==='aquageo-2';}
+    async ready(){return check(await admin.rpc('app_readiness'))==='aquageo-3';}
   };
 }

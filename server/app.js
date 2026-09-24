@@ -39,14 +39,15 @@ export function createApp({gateway,env=process.env,logger=console,renderPdf=gene
    res.type('html').send(renderCertificateHtml(cert));
  });
  async function pdf(cert) {
-   if(inFlight.has(cert.certificate_number))return inFlight.get(cert.certificate_number);
+   const key = `${cert.certificate_number}:${cert.status}`;
+   if(inFlight.has(key))return inFlight.get(key);
    if(activePdfs>=4)throw httpError(503,'Сервер занят. Попробуйте скачать сертификат позже.');
    activePdfs++;
-   const task=(async()=>{const saved=await gateway.getPdf(cert.certificate_number);if(saved)return Buffer.from(saved.pdf_base64,'base64');
-     const bytes=await renderPdf(cert);const stored=await gateway.savePdf(cert.certificate_number,bytes,cert.verify_url);
+   const task=(async()=>{const saved=cert.status==='revoked'?null:await gateway.getPdf(cert.certificate_number);if(saved)return Buffer.from(saved.pdf_base64,'base64');
+     const bytes=await renderPdf(cert);if(cert.status==='revoked')return bytes;const stored=await gateway.savePdf(cert.certificate_number,bytes,cert.verify_url);
      return stored?Buffer.from(stored.pdf_base64,'base64'):bytes;})();
-   inFlight.set(cert.certificate_number,task);
-   try{return await task;}finally{inFlight.delete(cert.certificate_number);activePdfs--;}
+   inFlight.set(key,task);
+   try{return await task;}finally{inFlight.delete(key);activePdfs--;}
  }
  app.get('/api/certificates/:number/pdf',limit('pdf',30),async(req,res)=>{const cert=await find(req.params.number);
    const bytes=await pdf(cert);if(req.destroyed)return;

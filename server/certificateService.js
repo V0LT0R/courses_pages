@@ -1,745 +1,105 @@
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { publicBaseUrl } from './validation.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-function getCertificateMainText(cert) {
-  // Новый вариант без названия курса:
-  return 'выдано участнику тренинга';
-
-  // Старый вариант с названием курса:
-  // Чтобы вернуть его, закомментируйте return выше
-  // и раскомментируйте строку ниже.
-  // return `«${cert.course_name}»`;
-}
-
-function registerCertificateFonts(doc) {
-  doc.registerFont(
-    'CertRegular',
-    path.join(__dirname, 'fonts/DejaVuSerif.ttf')
-  );
-
-  doc.registerFont(
-    'CertBold',
-    path.join(__dirname, 'fonts/DejaVuSerif-Bold.ttf')
-  );
-
-  return {
-    regular: 'CertRegular',
-    bold: 'CertBold',
-  };
-}
-
-function getCertificateVerifyUrl(cert) {
-  return (
-    cert.verify_url ||
-    `${publicBaseUrl()}/verify/${encodeURIComponent(
-      cert.certificate_number
-    )}`
-  );
-}
+const asset = relative => fileURLToPath(new URL(relative, import.meta.url));
+const blue = '#0b5394', gold = '#c9a227', dark = '#172033', gray = '#44566b';
 
 export function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+  return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]);
+}
+
+function issuedDate(cert) {
+  const date = new Date(cert.issued_at);
+  if (Number.isNaN(date.getTime())) throw new Error('Certificate issue date is invalid');
+  return date;
+}
+
+function verifyUrl(cert) {
+  const url = new URL(cert.verify_url || `${publicBaseUrl()}/verify/${encodeURIComponent(cert.certificate_number)}`);
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid certificate verification URL');
+  return url.href;
+}
+
+function fitText(doc, text, x, y, width, height, maxSize, font = 'Regular', color = dark) {
+  doc.font(font).fillColor(color);
+  let size = maxSize;
+  const options = { width, align: 'center', lineGap: 1 };
+  while (size > 6) {
+    doc.fontSize(size);
+    if (doc.heightOfString(String(text), options) <= height &&
+      String(text).split(/\s+/).every(word => doc.widthOfString(word) <= width)) break;
+    size -= 0.5;
+  }
+  doc.fontSize(size).text(String(text), x, y, { ...options, height });
 }
 
 export async function generateCertificatePdf(cert) {
-  const verifyUrl = getCertificateVerifyUrl(cert);
-
-  const issued = cert.issued_at
-    ? new Date(cert.issued_at)
-    : new Date();
-
-  const issuedDate = Number.isNaN(issued.getTime())
-    ? ''
-    : issued.toLocaleDateString('ru-RU', {
-        timeZone: 'UTC',
-      });
-
-  const labels = {
-    ru: {
-      title: 'СЕРТИФИКАТ',
-      subtitle:
-        'выдан участнику Научно-практических семинаров и тренингов',
-      completed: 'за успешное прохождение семинара',
-      internship: 'успешно прошёл(ла) стажировку',
-      score: 'Результат',
-      issued: 'Дата выдачи',
-      number: 'Номер сертификата',
-      verify: 'Проверить сертификат',
-    },
-
-    en: {
-      title: 'CERTIFICATE',
-      subtitle: 'confirms successful completion of training',
-      completed: 'has successfully completed the course',
-      internship: 'has successfully completed the internship',
-      duration: 'Duration',
-      hours: 'hours',
-      score: 'Score',
-      issued: 'Issued',
-      number: 'Certificate number',
-      verify: 'Verify certificate',
-    },
-
-    kz: {
-      title: 'СЕРТИФИКАТ',
-      subtitle: 'оқуды сәтті аяқтағанын растайды',
-      completed: 'курсты сәтті аяқтады',
-      internship: 'тағылымдаманы сәтті аяқтады',
-      duration: 'Ұзақтығы',
-      hours: 'сағат',
-      score: 'Нәтиже',
-      issued: 'Берілген күні',
-      number: 'Сертификат нөмірі',
-      verify: 'Сертификатты тексеру',
-    },
-  }[cert.language || 'ru'];
-
-  const score =
-    cert.score !== null && cert.score !== undefined
-      ? Number(cert.score)
-      : null;
-
-  const intro =
-    cert.course_type === 'internship'
-      ? labels.internship
-      : labels.completed;
-
-  const qrDataUrl = await QRCode.toDataURL(verifyUrl, {
-    margin: 1,
-    width: 120,
-  });
-
-  const qrPng = Buffer.from(
-    qrDataUrl.split(',')[1],
-    'base64'
-  );
-
-  const doc = new PDFDocument({
-    size: 'A4',
-    layout: 'landscape',
-    margin: 0,
-    info: {
-      Title: cert.certificate_number,
-      CreationDate: issued,
-      ModDate: issued,
-      Producer: 'AQUAGEO certificate renderer v2',
-      Creator: 'AQUAGEO',
-    },
-  });
-
-  const pdfFonts = registerCertificateFonts(doc);
+  const issued = issuedDate(cert);
+  const url = verifyUrl(cert);
+  const qr = await QRCode.toBuffer(url, { width: 400, margin: 1, errorCorrectionLevel: 'M' });
+  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 0,
+    info: { Title: cert.certificate_number, Author: cert.issuer || 'AQUAGEO.KZ',
+      CreationDate: issued, ModDate: issued, Producer: 'AQUAGEO certificate renderer v3', Creator: 'AQUAGEO.KZ' } });
+  doc.registerFont('Regular', asset('../fonts/NotoSerif-Regular.ttf'));
+  doc.registerFont('SemiBold', asset('../fonts/NotoSerif-SemiBold.ttf'));
+  doc.registerFont('Bold', asset('../fonts/NotoSerif-Bold.ttf'));
   const chunks = [];
-
-  doc.on('data', (chunk) => chunks.push(chunk));
-
   const done = new Promise((resolve, reject) => {
+    doc.on('data', chunk => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
   });
-
-  const pageW = doc.page.width;
-  const pageH = doc.page.height;
-
-  doc
-    .rect(0, 0, pageW, pageH)
-    .fill('#ffffff');
-
-  doc
-    .lineWidth(2)
-    .strokeColor('#0b5394')
-    .roundedRect(
-      28,
-      28,
-      pageW - 56,
-      pageH - 56,
-      12
-    )
-    .stroke();
-
-  doc
-    .lineWidth(1)
-    .strokeColor('#c9a227')
-    .roundedRect(
-      40,
-      40,
-      pageW - 80,
-      pageH - 80,
-      9
-    )
-    .stroke();
-
-  const issuer = cert.issuer || 'AQUAGEO.KZ';
-
-  doc
-    .fillColor('#0b5394')
-    .font(pdfFonts.regular);
-
-  fitText(
-    doc,
-    String(issuer).toUpperCase(),
-    60,
-    65,
-    pageW - 120,
-    40,
-    15
-  );
-
-  doc
-    .font(pdfFonts.bold)
-    .fontSize(48)
-    .text(labels.title, 0, 120, {
-      align: 'center',
-      width: pageW,
-      characterSpacing: 5,
-    });
-
-  doc
-    .fillColor('#44566b')
-    .font(pdfFonts.regular)
-    .fontSize(16)
-    .text(labels.subtitle, 0, 183, {
-      align: 'center',
-      width: pageW,
-    });
-
-  doc
-    .fillColor('#1b2a3a')
-    .font(pdfFonts.bold);
-
-  fitText(
-    doc,
-    cert.full_name,
-    80,
-    215,
-    pageW - 160,
-    65,
-    34
-  );
-
-  doc
-    .moveTo(190, 286)
-    .lineTo(pageW - 190, 286)
-    .lineWidth(1.2)
-    .strokeColor('#c9a227')
-    .stroke();
-
-  doc
-    .fillColor('#44566b')
-    .font(pdfFonts.regular)
-    .fontSize(15)
-    .text(intro, 0, 298, {
-      align: 'center',
-      width: pageW,
-    });
-
-  doc
-    .fillColor('#1b2a3a')
-    .font(pdfFonts.bold);
-
-  fitText(
-    doc,
-    getCertificateMainText(cert),
-    90,
-    324,
-    pageW - 180,
-    66,
-    22
-  );
-
-  const meta = [];
-
-  if (score !== null && !Number.isNaN(score)) {
-    meta.push(`${labels.score}: ${score.toFixed(1)}`);
+  const w = doc.page.width, h = doc.page.height;
+  doc.rect(0, 0, w, h).fill('#ffffff');
+  doc.lineWidth(2).strokeColor(blue).roundedRect(28, 28, w - 56, h - 56, 12).stroke();
+  doc.lineWidth(0.8).strokeColor(gold).roundedRect(40, 40, w - 80, h - 80, 9).stroke();
+  fitText(doc, cert.issuer || 'AQUAGEO.KZ', 60, 62, w - 120, 30, 15, 'Regular', blue);
+  doc.font('Bold').fontSize(44).fillColor(blue).text('СЕРТИФИКАТ', 45, 106, { width: w - 90, align: 'center', characterSpacing: 4 });
+  fitText(doc, 'Настоящий сертификат подтверждает, что', 70, 185, w - 140, 26, 15, 'Regular', gray);
+  fitText(doc, cert.full_name, 75, 217, w - 150, 53, 32, 'SemiBold');
+  doc.moveTo(180, 277).lineTo(w - 180, 277).lineWidth(1).strokeColor(gold).stroke();
+  fitText(doc, 'выдан участнику Научно-практических семинаров и тренингов', 65, 290, w - 130, 23, 12.5, 'Regular', gray);
+  fitText(doc, `«${cert.course_name}»`, 65, 313, w - 130, 54, 16, 'SemiBold');
+  if (Number.isInteger(cert.academic_hours) && cert.academic_hours > 0) {
+    fitText(doc, `Объём программы: ${cert.academic_hours} академических часов`, 70, 374, w - 140, 23, 12.5, 'SemiBold', gray);
   }
-
-  meta.push(`${labels.issued}: ${issuedDate}`);
-
-  doc
-    .fillColor('#2a3b4d')
-    .font(pdfFonts.regular)
-    .fontSize(13)
-    .text(meta.join('     '), 0, 404, {
-      align: 'center',
-      width: pageW,
-    });
-
-  doc
-    .strokeColor('#1b2a3a')
-    .lineWidth(1)
-    .moveTo(86, 506)
-    .lineTo(242, 506)
-    .stroke();
-
-  doc
-    .fillColor('#44566b')
-    .fontSize(10)
-    .text(issuer, 70, 512, {
-      align: 'center',
-      width: 190,
-    });
-
-  doc
-    .fillColor('#6b7c8d')
-    .fontSize(9)
-    .text(labels.number, 282, 497, {
-      align: 'center',
-      width: 280,
-    });
-
-  fitText(
-    doc,
-    cert.certificate_number,
-    282,
-    512,
-    280,
-    24,
-    8
-  );
-
-  doc.image(qrPng, pageW - 170, 462, {
-    width: 80,
-    height: 80,
-  });
-
-  doc
-    .fillColor('#0b5394')
-    .font(pdfFonts.bold)
-    .fontSize(8)
-    .text(labels.verify, pageW - 205, 540, {
-      align: 'center',
-      width: 150,
-      link: verifyUrl,
-      underline: true,
-    });
-
+  fitText(doc, `${cert.city || 'Астана'}, ${issued.getUTCFullYear()}`, 70, 400, w - 140, 21, 13, 'Regular', gray);
+  fitText(doc, `Дата выдачи: ${issued.toLocaleDateString('ru-RU', { timeZone: 'UTC' })}`, 70, 420, w - 140, 20, 12, 'Regular', gray);
+  fitText(doc, 'НИЦ «Industry 4.0»', 65, 451, 215, 18, 10, 'SemiBold');
+  fitText(doc, 'Astana IT University', 65, 469, 215, 18, 9, 'Regular', gray);
+  fitText(doc, 'И.о. директора', 302, 461, 115, 18, 9.5);
+  // Existing issuer-provided project asset; this image is not a cryptographic signature.
+  doc.image(asset('../assets/signature-kazambayeva.png'), 418, 433, { fit: [105, 70], align: 'center', valign: 'center' });
+  fitText(doc, 'И. М. Казамбаева', 530, 461, 137, 20, 10, 'SemiBold');
+  doc.image(qr, w - 145, 433, { width: 84, height: 84 });
+  doc.link(w - 145, 433, 84, 84, url);
+  fitText(doc, 'Номер сертификата', 200, 517, w - 400, 15, 8, 'Regular', '#6b7c8d');
+  fitText(doc, cert.certificate_number, 160, 531, w - 320, 18, 8.5, 'Regular', blue);
   if (cert.status === 'revoked') {
-    doc
-      .fillColor('#ac2020')
-      .font(pdfFonts.bold)
-      .fontSize(16)
-      .text(
-        'СЕРТИФИКАТ ОТОЗВАН',
-        60,
-        435,
-        {
-          width: pageW - 120,
-          align: 'center',
-        }
-      );
+    fitText(doc, 'СЕРТИФИКАТ ОТОЗВАН', 150, 164, w - 300, 20, 12, 'Bold', '#ac2020');
   }
-
   doc.end();
-
   return done;
 }
 
-export function renderCertificateHtml(
-  cert,
-  { printable = true } = {}
-) {
-  const labels = {
-    ru: {
-      title: 'СЕРТИФИКАТ',
-      subtitle:
-        'выдан участнику Научно-практических семинаров и тренингов',
-      completed: 'за успешное прохождение семинара',
-      internship: 'успешно прошёл(ла) стажировку',
-      score: 'Результат',
-      issued: 'Дата выдачи',
-      number: 'Номер сертификата',
-      verify: 'Проверить сертификат',
-      print: 'Печать / сохранить PDF',
-    },
-
-    en: {
-      title: 'CERTIFICATE',
-      subtitle: 'confirms successful completion of training',
-      completed: 'has successfully completed the course',
-      internship: 'has successfully completed the internship',
-      duration: 'Duration',
-      hours: 'hours',
-      score: 'Score',
-      issued: 'Issued',
-      number: 'Certificate number',
-      verify: 'Verify certificate',
-      print: 'Print / save PDF',
-    },
-
-    kz: {
-      title: 'СЕРТИФИКАТ',
-      subtitle: 'оқуды сәтті аяқтағанын растайды',
-      completed: 'курсты сәтті аяқтады',
-      internship: 'тағылымдаманы сәтті аяқтады',
-      duration: 'Ұзақтығы',
-      hours: 'сағат',
-      score: 'Нәтиже',
-      issued: 'Берілген күні',
-      number: 'Сертификат нөмірі',
-      verify: 'Сертификатты тексеру',
-      print: 'Басып шығару / PDF сақтау',
-    },
-  }[cert.language || 'ru'];
-
-  const issued = cert.issued_at
-    ? new Date(cert.issued_at)
-    : new Date();
-
-  const issuedDate = Number.isNaN(issued.getTime())
-    ? ''
-    : issued.toLocaleDateString('ru-RU', {
-        timeZone: 'UTC',
-      });
-
-  const verifyUrl = getCertificateVerifyUrl(cert);
-
-  const score =
-    cert.score !== null && cert.score !== undefined
-      ? Number(cert.score)
-      : null;
-
-  const intro =
-    cert.course_type === 'internship'
-      ? labels.internship
-      : labels.completed;
-
-  return `<!doctype html>
-<html lang="${escapeHtml(cert.language || 'ru')}">
-<head>
-<meta charset="utf-8" />
-<meta
-  name="viewport"
-  content="width=device-width, initial-scale=1"
-/>
-<title>${escapeHtml(
-    cert.certificate_number
-  )} — certificate</title>
-
-<style>
-  @page {
-    size: A4 landscape;
-    margin: 0;
-  }
-
-  * {
-    box-sizing: border-box;
-  }
-
-  body {
-    margin: 0;
-    background: #eef3f8;
-    color: #1b2a3a;
-    font-family: 'Times New Roman', Georgia, serif;
-  }
-
-  .toolbar {
-    padding: 16px;
-    text-align: center;
-    font-family: Arial, sans-serif;
-  }
-
-  .toolbar button,
-  .toolbar a {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    border: 0;
-    border-radius: 999px;
-    padding: 11px 18px;
-    background: #0b5394;
-    color: #ffffff;
-    text-decoration: none;
-    cursor: pointer;
-    font-weight: 700;
-    margin: 4px;
-  }
-
-  .sheet {
-    width: 297mm;
-    min-height: 210mm;
-    margin: 18px auto;
-    padding: 14mm 18mm;
-    position: relative;
-    background: #ffffff;
-    box-shadow: 0 18px 50px rgba(10, 27, 55, 0.14);
-  }
-
-  .border {
-    position: absolute;
-    inset: 7mm;
-    border: 2px solid #0b5394;
-    border-radius: 4mm;
-  }
-
-  .border::after {
-    content: '';
-    position: absolute;
-    inset: 2.5mm;
-    border: 0.5mm solid #c9a227;
-    border-radius: 3mm;
-  }
-
-  .content {
-    position: relative;
-    height: 182mm;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    padding: 6mm 10mm;
-  }
-
-  .issuer {
-    font-size: 13pt;
-    letter-spacing: 0.5pt;
-    color: #0b5394;
-    text-transform: uppercase;
-    margin-top: 2mm;
-  }
-
-  .title {
-    font-size: 40pt;
-    font-weight: bold;
-    letter-spacing: 6pt;
-    color: #0b5394;
-    margin: 6mm 0 2mm;
-  }
-
-  .subtitle {
-    font-size: 14pt;
-    color: #44566b;
-  }
-
-  .name {
-    overflow-wrap: anywhere;
-    font-size: 26pt;
-    font-weight: bold;
-    margin: 7mm 0 3mm;
-    border-bottom: 0.4mm solid #c9a227;
-    padding-bottom: 2mm;
-    max-width: 220mm;
-  }
-
-  .course-intro {
-    font-size: 13pt;
-    color: #44566b;
-  }
-
-  .course-name {
-    overflow-wrap: anywhere;
-    font-size: 17pt;
-    font-weight: bold;
-    margin: 3mm 0;
-    max-width: 210mm;
-  }
-
-  .meta {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 10mm;
-    font-size: 12pt;
-    margin-top: 4mm;
-    color: #2a3b4d;
-  }
-
-  .meta b {
-    color: #0b5394;
-  }
-
-  .footer {
-    position: absolute;
-    bottom: 4mm;
-    left: 10mm;
-    right: 10mm;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 12mm;
-  }
-
-  .sign-box {
-    text-align: center;
-    font-size: 10pt;
-    color: #44566b;
-  }
-
-  .sign-line {
-    width: 55mm;
-    border-top: 0.4mm solid #1b2a3a;
-    margin-bottom: 1mm;
-  }
-
-  .verify-box {
-    max-width: 75mm;
-    text-align: center;
-    font-size: 8pt;
-    color: #44566b;
-    word-break: break-all;
-  }
-
-  .cert-number {
-    font-size: 9pt;
-    color: #6b7c8d;
-    letter-spacing: 1pt;
-  }
-
-  @media print {
-    body {
-      background: #ffffff;
-    }
-
-    .toolbar {
-      display: none;
-    }
-
-    .sheet {
-      margin: 0;
-      box-shadow: none;
-    }
-  }
-</style>
-</head>
-
-<body>
-${
-  printable
-    ? `<div class="toolbar">
-        <strong>${
-          cert.status === 'revoked'
-            ? 'Сертификат отозван'
-            : 'Сертификат действителен'
-        }</strong>
-        <br>
-        <a href="/api/certificates/${escapeHtml(
-          cert.certificate_number
-        )}/pdf">
-          Открыть сертификат / Скачать PDF
-        </a>
-      </div>`
-    : ''
-}
-
-<div class="sheet">
-  <div class="border"></div>
-
-  <div class="content">
-    <div class="issuer">
-      ${escapeHtml(
-        cert.issuer ||
-          process.env.ISSUER_NAME ||
-          'NIC Research Center'
-      )}
-    </div>
-
-    <div class="title">
-      ${escapeHtml(labels.title)}
-    </div>
-
-    <div class="subtitle">
-      ${escapeHtml(labels.subtitle)}
-    </div>
-
-    <div class="name">
-      ${escapeHtml(cert.full_name)}
-    </div>
-
-    <div class="course-intro">
-      ${escapeHtml(intro)}
-    </div>
-
-    <div class="course-name">
-      ${escapeHtml(getCertificateMainText(cert))}
-    </div>
-
-    <div class="meta">
-      ${
-        score !== null && !Number.isNaN(score)
-          ? `<div>
-              <b>${escapeHtml(labels.score)}:</b>
-              ${escapeHtml(score.toFixed(1))}
-            </div>`
-          : ''
-      }
-
-      <div>
-        <b>${escapeHtml(labels.issued)}:</b>
-        ${escapeHtml(issuedDate)}
-      </div>
-    </div>
-
-    <div class="footer">
-      <div class="sign-box">
-        <div class="sign-line"></div>
-
-        ${escapeHtml(
-          cert.issuer ||
-            process.env.ISSUER_NAME ||
-            'NIC Research Center'
-        )}
-      </div>
-
-      <div class="cert-number">
-        ${escapeHtml(labels.number)}
-        <br>
-        ${escapeHtml(cert.certificate_number)}
-      </div>
-
-      <div class="verify-box">
-        <b>${escapeHtml(labels.verify)}</b>
-        <br>
-        ${escapeHtml(verifyUrl)}
-      </div>
-    </div>
-  </div>
-</div>
-</body>
-</html>`;
-}
-
-function fitText(
-  doc,
-  text,
-  x,
-  y,
-  width,
-  height,
-  maxSize
-) {
-  let size = maxSize;
-
-  while (size > 10) {
-    doc.fontSize(size);
-
-    if (
-      doc.heightOfString(String(text), {
-        width,
-        align: 'center',
-      }) <= height
-    ) {
-      break;
-    }
-
-    size -= 0.5;
-  }
-
-  doc.fontSize(size).text(
-    String(text),
-    x,
-    y,
-    {
-      width,
-      height,
-      align: 'center',
-    }
-  );
+export function renderCertificateHtml(cert, { printable = true } = {}) {
+  const number = escapeHtml(cert.certificate_number);
+  const pdf = `/api/certificates/${encodeURIComponent(cert.certificate_number)}/pdf`;
+  const date = issuedDate(cert).toLocaleDateString('ru-RU', { timeZone: 'UTC' });
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Сертификат ${number}</title><style>
+  body{margin:0;background:#f3f6f9;color:#172033;font-family:Georgia,serif}main{max-width:1120px;margin:24px auto;padding:20px}
+  .toolbar{background:white;border:1px solid #dbe3ec;border-radius:12px;padding:20px;margin-bottom:18px}h1{color:#0b5394;font-size:28px}
+  a{color:#0b5394}iframe{width:100%;height:78vh;min-height:420px;border:0;background:white}.revoked{color:#ac2020}
+  @media(max-width:600px){main{padding:12px;margin:0}h1{font-size:22px}}
+  </style></head><body><main><div class="toolbar">
+  <strong class="${cert.status === 'revoked' ? 'revoked' : ''}">${cert.status === 'revoked' ? 'Сертификат отозван' : 'Сертификат действителен'}</strong>
+  <h1>${escapeHtml(cert.full_name)}</h1><p>${escapeHtml(cert.course_name)}</p>
+  ${cert.academic_hours ? `<p>Объём программы: ${escapeHtml(cert.academic_hours)} академических часов</p>` : ''}
+  <p>Дата выдачи: ${date} · Номер: ${number}</p>
+  <a href="${pdf}">Открыть сертификат / Скачать PDF</a></div>
+  ${printable ? `<iframe title="Сертификат PDF" src="${pdf}"></iframe>` : ''}
+  </main></body></html>`;
 }

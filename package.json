@@ -10,7 +10,7 @@
     "server": "node server/index.js",
     "dev:full": "npm run dev",
     "preflight": "node scripts/preflight.mjs",
-    "test": "node --test tests/unit/*.test.mjs tests/http/*.test.mjs tests/database/*.test.mjs",
+    "test": "node --test tests/unit/*.test.mjs tests/http/*.test.mjs tests/database/*.test.mjs tests/static/*.test.mjs tests/certificate-behavior.test.mjs",
     "test:supabase": "node tests/integration/supabase-smoke.mjs",
     "test:concurrency": "node tests/integration/concurrency.mjs",
     "test:local": "npm run preflight && npm test",

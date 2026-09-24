@@ -2,6 +2,7 @@ import { userMessage } from '../lib/errors';
 import { useEffect, useMemo, useState } from 'react';
 import { normalizeSlug, uploadCourseImage, uploadCoursePdf } from '../lib/courseService';
 import { PASSING_SCORE_OPTIONS } from '../lib/testService';
+import { QUESTION_TYPES, questionPayload, validateTest } from '../lib/testQuestions';
 import { safeHttpUrl } from '../lib/security';
 
 const defaultImage = 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1200&q=80';
@@ -23,7 +24,8 @@ const initialState = {
   lecturerRole: '',
   lecturerBio: '',
   lecturerPhoto: defaultLecturerPhoto,
-  certificate: true,
+  testEnabled: true,
+  academicHours: '',
   rating: 5,
 };
 
@@ -59,6 +61,8 @@ function createTestQuestion(index = 1) {
     localId: crypto.randomUUID(),
     text: '',
     options: Array.from({ length: 4 }, (_, optionIndex) => createTestOption(optionIndex)),
+    type: 'single_choice',
+    acceptedAnswersText: '',
     correctOptionIndex: 0,
   };
 }
@@ -81,12 +85,14 @@ function mapTest(seminar) {
       localId: question.id || crypto.randomUUID(),
       id: question.id,
       text: question.text || '',
+      type: question.type || 'single_choice',
+      acceptedAnswersText: (question.acceptedAnswers || []).join('\n'),
       correctOptionIndex: Number(question.correctOptionIndex || 0),
       options: (question.options || []).map((option, optionIndex) => ({
         localId: option.id || crypto.randomUUID(),
         id: option.id,
         text: option.text || '',
-        isCorrect: optionIndex === Number(question.correctOptionIndex || 0),
+        isCorrect: (question.correctOptionIndices || [question.correctOptionIndex || 0]).includes(optionIndex),
       })),
     })),
   };
@@ -110,7 +116,8 @@ function mapSeminarToForm(seminar) {
     lecturerRole: seminar.lecturer?.role || '',
     lecturerBio: seminar.lecturer?.bio || '',
     lecturerPhoto: seminar.lecturer?.photo || defaultLecturerPhoto,
-    certificate: Boolean(seminar.certificate),
+    testEnabled: Boolean(seminar.test?.enabled),
+    academicHours: seminar.academicHours ?? '',
     rating: seminar.rating || 5,
   };
 }
@@ -231,7 +238,7 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
   };
 
   const removeTestQuestion = (questionIndex) => {
-    setTest((prev) => prev.questions.length <= 5 ? prev : {
+    setTest((prev) => prev.questions.length <= 1 ? prev : {
       ...prev,
       questions: prev.questions.filter((_, index) => index !== questionIndex),
     });
@@ -253,14 +260,7 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
       questions: prev.questions.map((question, index) => {
         if (index !== questionIndex || question.options.length <= 2) return question;
         const options = question.options.filter((_, currentIndex) => currentIndex !== optionIndex);
-        let correctOptionIndex = question.correctOptionIndex;
-        if (optionIndex === correctOptionIndex) correctOptionIndex = 0;
-        else if (optionIndex < correctOptionIndex) correctOptionIndex -= 1;
-        return {
-          ...question,
-          options: options.map((option, currentIndex) => ({ ...option, isCorrect: currentIndex === correctOptionIndex })),
-          correctOptionIndex,
-        };
+        return { ...question, options };
       }),
     }));
   };
@@ -276,14 +276,20 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
   };
 
   const setCorrectTestOption = (questionIndex, optionIndex) => {
-    setTest((prev) => ({
-      ...prev,
-      questions: prev.questions.map((question, index) => index !== questionIndex ? question : {
-        ...question,
-        correctOptionIndex: optionIndex,
-        options: question.options.map((option, currentIndex) => ({ ...option, isCorrect: currentIndex === optionIndex })),
-      }),
-    }));
+    setTest(prev => ({ ...prev, questions: prev.questions.map((question, index) => index !== questionIndex ? question : {
+      ...question,
+      options: question.options.map((option, currentIndex) => ({ ...option,
+        isCorrect: question.type === 'multiple_choice' ? (currentIndex === optionIndex ? !option.isCorrect : option.isCorrect) : currentIndex === optionIndex,
+      })),
+    }) }));
+  };
+
+  const changeQuestionType = (index, type) => {
+    const question = test.questions[index];
+    const options = type === 'true_false'
+      ? ['Верно', 'Неверно'].map((text, i) => ({ ...createTestOption(i), text }))
+      : (question.options.length >= 2 ? question.options : [createTestOption(0), createTestOption(1)]).map((option, i) => ({ ...option, isCorrect: type === 'multiple_choice' ? option.isCorrect : i === 0 }));
+    updateTestQuestion(index, { type, options });
   };
 
   const handlePdfUpload = async (sectionIndex, blockIndex, file) => {
@@ -343,7 +349,8 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
       bio: form.lecturerBio.trim(),
       photo: form.lecturerPhoto.trim(),
     },
-    certificate: form.certificate,
+    certificate: form.testEnabled,
+    academicHours: form.academicHours === '' ? null : Number(form.academicHours),
     rating: Number(form.rating || 5),
     sections: sections.map((section) => ({
       id: section.id,
@@ -357,15 +364,12 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
         filePath: block.filePath,
       })),
     })),
-    test: {
+    test: form.testEnabled ? {
+      enabled: true,
       passingScore: Number(test.passingScore),
       timeLimitMinutes: Number(test.timeLimitMinutes),
-      questions: test.questions.map((question) => ({
-        text: question.text.trim(),
-        options: question.options.map((option) => option.text.trim()),
-        correctOptionIndex: Number(question.correctOptionIndex),
-      })),
-    },
+      questions: test.questions.map(questionPayload),
+    } : null,
   });
 
   const validatePayload = (payload) => {
@@ -384,27 +388,8 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
       if (!section.title) missing.push(`название раздела ${index + 1}`);
     });
 
-    if (!PASSING_SCORE_OPTIONS.includes(payload.test.passingScore)) {
-      missing.push('проходной балл теста (60/70/80/90/100%)');
-    }
-    if (!Number.isInteger(payload.test.timeLimitMinutes) || payload.test.timeLimitMinutes <= 0) {
-      missing.push('время тестирования');
-    }
-    if (payload.test.questions.length < 5) {
-      missing.push('минимум 5 вопросов теста');
-    }
-    payload.test.questions.forEach((question, questionIndex) => {
-      if (!question.text) missing.push(`текст вопроса ${questionIndex + 1}`);
-      if (question.options.length < 2 || question.options.length > 6) {
-        missing.push(`2–6 вариантов ответа для вопроса ${questionIndex + 1}`);
-      }
-      question.options.forEach((option, optionIndex) => {
-        if (!option) missing.push(`вариант ${optionIndex + 1} вопроса ${questionIndex + 1}`);
-      });
-      if (question.correctOptionIndex < 0 || question.correctOptionIndex >= question.options.length) {
-        missing.push(`правильный ответ для вопроса ${questionIndex + 1}`);
-      }
-    });
+    if (payload.academicHours !== null && (!Number.isInteger(payload.academicHours) || payload.academicHours < 1 || payload.academicHours > 10000)) missing.push('академические часы от 1 до 10000');
+    if (payload.test) missing.push(...validateTest(payload.test));
 
     return missing;
   };
@@ -450,7 +435,9 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
         <label><span>Лектор</span><input name="lecturerName" value={form.lecturerName} onChange={handleChange} /></label>
         <label><span>Должность лектора</span><input name="lecturerRole" value={form.lecturerRole} onChange={handleChange} /></label>
         <label className="full"><span>Био лектора</span><textarea name="lecturerBio" value={form.lecturerBio} onChange={handleChange} rows="4" /></label>
-        <label className="checkbox-row"><input name="certificate" type="checkbox" checked={form.certificate} onChange={handleChange} /><span>Выдавать сертификат</span></label>
+        <label className="checkbox-row"><input name="testEnabled" type="checkbox" checked={form.testEnabled} onChange={handleChange} /><span>Итоговый тест и сертификат после успешной сдачи</span></label>
+        <p className="full">{form.testEnabled ? 'Семинар с сертификатом: изучение материалов и успешная сдача теста.' : 'Семинар без итогового теста и без сертификата.'}</p>
+        {form.testEnabled && <label><span>Объём программы, академических часов</span><input name="academicHours" type="number" min="1" max="10000" step="1" value={form.academicHours} onChange={handleChange} placeholder="Например, 18" /><small>Укажите фактический объём. Если поле пустое, часы не печатаются.</small></label>}
       </div>
 
       <div className="course-builder">
@@ -558,13 +545,13 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
         </div>
       </div>
 
-      <div className="course-builder test-builder">
+      {form.testEnabled && <div className="course-builder test-builder">
         <div className="course-builder-head">
           <div>
             <h3>Итоговое тестирование</h3>
-            <p>Минимум 5 вопросов. Для каждого вопроса можно добавить от 2 до 6 вариантов и выбрать один правильный ответ.</p>
+            <p>От 1 до 200 вопросов разных типов. Для нескольких ответов засчитывается только полный правильный набор.</p>
           </div>
-          <button type="button" className="cta-button small" onClick={addTestQuestion}>Добавить вопрос</button>
+          <button type="button" className="cta-button small" onClick={addTestQuestion} disabled={test.questions.length >= 200}>Добавить вопрос</button>
         </div>
 
         <div className="form-grid test-settings-grid">
@@ -576,7 +563,7 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
           </label>
           <label>
             <span>Время на тест, минут</span>
-            <input type="number" min="1" step="1" value={test.timeLimitMinutes} onChange={(e) => updateTestSettings({ timeLimitMinutes: e.target.value })} />
+            <input type="number" min="1" max="480" step="1" value={test.timeLimitMinutes} onChange={(e) => updateTestSettings({ timeLimitMinutes: e.target.value })} />
           </label>
         </div>
 
@@ -589,30 +576,34 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
                   type="button"
                   className="ghost-inline-button small danger"
                   onClick={() => removeTestQuestion(questionIndex)}
-                  disabled={test.questions.length <= 5}
+                  disabled={test.questions.length <= 1}
                 >
                   Удалить вопрос
                 </button>
               </div>
 
+              <label><span>Тип вопроса</span><select value={question.type} onChange={e => changeQuestionType(questionIndex, e.target.value)}>{Object.entries(QUESTION_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
               <label className="test-question-text">
                 <span>Текст вопроса</span>
-                <textarea rows="3" value={question.text} onChange={(e) => updateTestQuestion(questionIndex, { text: e.target.value })} placeholder="Введите вопрос" />
+                <textarea rows="3" maxLength="2000" value={question.text} onChange={(e) => updateTestQuestion(questionIndex, { text: e.target.value })} placeholder="Введите вопрос" />
               </label>
 
+              {question.type === 'short_answer' ? <label><span>Допустимые ответы — по одному на строку</span><textarea rows="3" value={question.acceptedAnswersText} onChange={e => updateTestQuestion(questionIndex, { acceptedAnswersText: e.target.value })} /><small>Регистр и лишние пробелы не учитываются. Совпадение с одним из указанных вариантов.</small></label> : <>
               <div className="test-options-editor">
                 {question.options.map((option, optionIndex) => (
                   <div className="test-option-editor" key={option.localId}>
                     <label className="test-correct-radio" title="Отметить правильный ответ">
                       <input
-                        type="radio"
+                        type={question.type === 'multiple_choice' ? 'checkbox' : 'radio'}
                         name={`correct-${question.localId}`}
-                        checked={question.correctOptionIndex === optionIndex}
+                        checked={option.isCorrect}
                         onChange={() => setCorrectTestOption(questionIndex, optionIndex)}
                       />
                       <span>Правильный</span>
                     </label>
                     <input
+                      maxLength="1000"
+                      readOnly={question.type === 'true_false'}
                       value={option.text}
                       onChange={(e) => updateTestOption(questionIndex, optionIndex, e.target.value)}
                       placeholder={`Вариант ответа ${optionIndex + 1}`}
@@ -621,7 +612,7 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
                       type="button"
                       className="ghost-inline-button small danger"
                       onClick={() => removeTestOption(questionIndex, optionIndex)}
-                      disabled={question.options.length <= 2}
+                      disabled={question.type === 'true_false' || question.options.length <= 2}
                     >
                       ×
                     </button>
@@ -633,14 +624,14 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
                 type="button"
                 className="ghost-inline-button small"
                 onClick={() => addTestOption(questionIndex)}
-                disabled={question.options.length >= 6}
+                disabled={question.type === 'true_false' || question.options.length >= 6}
               >
                 + Добавить вариант ответа
-              </button>
+              </button></> }
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
       {formError ? <div className="error-text">{formError}</div> : null}
 

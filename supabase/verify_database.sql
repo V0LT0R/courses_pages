@@ -19,6 +19,13 @@ checks as (
  union all select 'profile role has no column update grant',case when to_regclass('public.profiles') is null then false else not has_column_privilege('authenticated','public.profiles','role','UPDATE') end
  union all select 'private certificates deny anonymous select',case when to_regclass('public.certificates') is null then false else not has_table_privilege('anon','public.certificates','SELECT') end
  union all select 'answer policy exists',exists(select 1 from pg_policies where schemaname='public' and tablename='test_question_answers' and policyname='answer_read')
+ union all select 'seminar schema version 3',public.app_readiness()='aquageo-3'
+ union all select 'question types column',exists(select 1 from information_schema.columns where table_schema='public' and table_name='test_questions' and column_name='question_type')
+ union all select 'multi-answer key column',exists(select 1 from information_schema.columns where table_schema='public' and table_name='test_question_answers' and column_name='correct_option_ids')
+ union all select 'text-answer key column',exists(select 1 from information_schema.columns where table_schema='public' and table_name='test_question_answers' and column_name='accepted_answers')
+ union all select 'certificate academic hours snapshot',exists(select 1 from information_schema.columns where table_schema='public' and table_name='certificates' and column_name='academic_hours_snapshot')
+ union all select 'certificate availability matches enabled test',not exists(select 1 from public.courses c where c.certificate is distinct from exists(select 1 from public.course_tests t where t.course_id=c.id and t.enabled))
+ union all select 'standalone test mutation is not exposed',not has_function_privilege('authenticated','public.save_course_test(uuid,integer,integer,jsonb)','EXECUTE')
 )
 select case when ok then 'PASS' else 'FAIL' end as status,object from checks order by status,object;
 -- Historical rows may predate NOT VALID constraints. Inspect these separately before VALIDATE CONSTRAINT.

@@ -5,3 +5,7 @@ dist/
 *.bak
 server/uploads/
 *.log
+tmp/
+output/
+.env.*
+!.env.example

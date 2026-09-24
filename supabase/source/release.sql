@@ -93,7 +93,7 @@ begin
  perform pg_advisory_xact_lock(hashtext(auth.uid()::text),hashtext(check_course_id::text));
  select * into target from public.certificates where user_id=auth.uid() and course_id=check_course_id;
  if target.id is not null then return target; end if;
- if not c.certificate then raise exception 'CERTIFICATE_DISABLED'; end if;
+ if not c.certificate or not exists(select 1 from public.course_tests where course_id=check_course_id and enabled) then raise exception 'CERTIFICATE_DISABLED'; end if;
  if not public.is_enrolled(check_course_id) or not public.course_content_completed(check_course_id,auth.uid()) then
   raise exception 'Complete all course sections first';
  end if;
@@ -102,8 +102,8 @@ begin
   order by score desc,completed_at desc limit 1;
  if a.id is null then raise exception 'A passed non-expired test attempt is required'; end if;
  select * into p from public.profiles where id=auth.uid() for share;
- insert into public.certificates(user_id,course_id,full_name_snapshot,course_title_snapshot,score_snapshot,issuer_snapshot)
- values(auth.uid(),check_course_id,p.full_name,c.title,a.score,(select issuer_name from public.app_settings where id))
+ insert into public.certificates(user_id,course_id,full_name_snapshot,course_title_snapshot,score_snapshot,issuer_snapshot,academic_hours_snapshot,city_snapshot,template_version)
+ values(auth.uid(),check_course_id,p.full_name,c.title,a.score,(select issuer_name from public.app_settings where id),c.academic_hours,'Астана',3)
  on conflict(user_id,course_id) do nothing returning * into target;
  if target.id is null then select * into target from public.certificates where user_id=auth.uid() and course_id=check_course_id; end if;
  update public.enrollments set completed_at=coalesce(completed_at,a.completed_at),certificate_requested_at=coalesce(certificate_requested_at,target.issued_at)

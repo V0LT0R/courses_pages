@@ -1,3 +1,4 @@
+import { answerPayload } from './testQuestions';
 import {selectAll} from './pagination';
 import { ensureSupabaseConfigured, supabase, withTimeout } from './supabase';
 
@@ -46,7 +47,7 @@ export async function getCourseTestForEdit(courseUuid) {
     answers = answerRows || [];
   }
 
-  const answerByQuestion = new Map(answers.map((answer) => [answer.question_id, answer.correct_option_id]));
+  const answerByQuestion = new Map(answers.map((answer) => [answer.question_id, answer]));
   const optionsByQuestion = new Map();
   options.forEach((option) => {
     const list = optionsByQuestion.get(option.question_id) || [];
@@ -63,10 +64,15 @@ export async function getCourseTestForEdit(courseUuid) {
     questionCount: test.question_count,
     questions: questionRows.map((question) => {
       const questionOptions = optionsByQuestion.get(question.id) || [];
-      const correctOptionId = answerByQuestion.get(question.id);
+      const answer = answerByQuestion.get(question.id);
+      const correctOptionId = answer?.correct_option_id;
+      const correctIds = answer?.correct_option_ids?.length ? answer.correct_option_ids : [correctOptionId];
       return {
         id: question.id,
         text: question.question_text,
+        type: question.question_type || 'single_choice',
+        acceptedAnswers: answer?.accepted_answers || [],
+        correctOptionIndices: questionOptions.flatMap((option, i) => correctIds.includes(option.id) ? [i] : []),
         options: questionOptions.map((option) => ({ id: option.id, text: option.option_text })),
         correctOptionIndex: Math.max(0, questionOptions.findIndex((option) => option.id === correctOptionId)),
       };
@@ -177,16 +183,14 @@ export async function getAttemptQuestions(attempt) {
   return questionRows.map((question) => ({
     id: question.id,
     text: question.question_text,
+    type: question.question_type || 'single_choice',
     options: optionsByQuestion.get(question.id) || [],
   }));
 }
 
 export async function submitCourseTest(attemptId, answers) {
   ensureSupabaseConfigured();
-  const payload = Object.entries(answers || {}).map(([questionId, optionId]) => ({
-    question_id: questionId,
-    option_id: optionId,
-  }));
+  const payload = answerPayload(answers);
 
   const { data, error } = await supabase.rpc('submit_course_test', {
     check_attempt_id: attemptId,

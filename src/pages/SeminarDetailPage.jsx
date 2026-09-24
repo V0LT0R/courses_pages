@@ -129,7 +129,7 @@ export default function SeminarDetailPage() {
 
           <div className="card sidebar-card">
             <h3>Сертификат</h3>
-            <p>{seminar.certificate ? 'После отметки всех разделов появится кнопка получения сертификата.' : 'Сертификат не предусмотрен.'}</p>
+            <p>{seminar.certificate ? 'Семинар с сертификатом: ознакомьтесь со всеми разделами и успешно пройдите итоговый тест.' : 'Семинар без итогового теста и без сертификата.'}</p>
           </div>
 
           <div className="card sidebar-card">

@@ -136,6 +136,10 @@ begin
         completed_at = coalesce(public.section_progress.completed_at, excluded.completed_at)
   returning * into target;
 
+  if not exists(select 1 from public.course_tests where course_id=target_course_id and enabled)
+    and public.course_content_completed(target_course_id,auth.uid()) then
+    perform public.finalize_course_completion(target_course_id);
+  end if;
   return target;
 end;
 $$;
@@ -201,6 +205,9 @@ begin
   order by a.score desc nulls last, a.completed_at desc
   limit 1;
 
+  if not exists(select 1 from public.course_tests where course_id=check_course_id and enabled) then
+    completion_time := clock_timestamp();
+  end if;
   if completion_time is null then
     raise exception 'A passed non-expired test attempt is required';
   end if;
@@ -326,7 +333,7 @@ begin
     raise exception 'The course test has not been configured yet';
   end if;
 
-  if target_test.question_count < 5 then
+  if target_test.question_count < 1 then
     raise exception 'The course test is not ready';
   end if;
 
@@ -624,6 +631,8 @@ declare
   block_type_value public.content_block_type;
   file_path_value text;
   content_value text;
+  has_test boolean;
+  hours_value integer;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
@@ -655,12 +664,18 @@ begin
     raise exception 'A course cannot contain more than 100 sections';
   end if;
 
+  test_item := check_payload->'test';
+  if test_item is not null and jsonb_typeof(test_item) not in ('object','null') then raise exception 'Invalid test settings'; end if;
+  has_test := coalesce(jsonb_typeof(test_item)='object' and coalesce((test_item->>'enabled')::boolean,true),false);
+  hours_value := nullif(check_payload->>'academicHours','')::integer;
+  if hours_value is not null and hours_value not between 1 and 10000 then raise exception 'Invalid academic hours'; end if;
+
   if course_id_value is null then
     insert into public.courses (
       slug, title, category, date_text, duration, format, location,
       image_url, short_description, description, outcomes,
       lecturer_name, lecturer_role, lecturer_bio, lecturer_photo,
-      certificate, rating, created_by
+      certificate, academic_hours, rating, created_by
     ) values (
       payload_slug,
       payload_title,
@@ -677,7 +692,8 @@ begin
       left(btrim(coalesce(check_payload#>>'{lecturer,role}', '')), 200),
       left(btrim(coalesce(check_payload#>>'{lecturer,bio}', '')), 5000),
       left(btrim(coalesce(check_payload#>>'{lecturer,photo}', '')), 2000),
-      coalesce((check_payload->>'certificate')::boolean, true),
+      has_test,
+      hours_value,
       greatest(0, least(5, coalesce((check_payload->>'rating')::numeric, 5))),
       auth.uid()
     )
@@ -715,7 +731,8 @@ begin
       lecturer_role = left(btrim(coalesce(check_payload#>>'{lecturer,role}', '')), 200),
       lecturer_bio = left(btrim(coalesce(check_payload#>>'{lecturer,bio}', '')), 5000),
       lecturer_photo = left(btrim(coalesce(check_payload#>>'{lecturer,photo}', '')), 2000),
-      certificate = coalesce((check_payload->>'certificate')::boolean, true),
+      certificate = has_test,
+      academic_hours = hours_value,
       rating = greatest(0, least(5, coalesce((check_payload->>'rating')::numeric, 5)))
     where c.id = course_id_value;
   end if;
@@ -847,7 +864,7 @@ begin
     and not (s.id = any(section_ids));
 
   test_item := check_payload->'test';
-  if test_item is not null and jsonb_typeof(test_item) = 'object' then
+  if has_test then
     perform 1
     from public.save_course_test(
       course_id_value,
@@ -855,6 +872,10 @@ begin
       coalesce((test_item->>'timeLimitMinutes')::integer, 10),
       coalesce(test_item->'questions', '[]'::jsonb)
     );
+  else
+    update public.course_tests set enabled=false where course_id=course_id_value;
+    update public.enrollments e set completed_at=coalesce(e.completed_at,clock_timestamp())
+    where e.course_id=course_id_value and public.course_content_completed(course_id_value,e.user_id);
   end if;
 
   return course_id_value;

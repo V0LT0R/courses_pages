@@ -7,7 +7,7 @@ export default function SeminarCard({ seminar }) {
       <div className="card-body">
         <div className="card-badge-row">
           <span className="badge">{seminar.category}</span>
-          {seminar.certificate ? <span className="pdf-chip">Сертификат</span> : null}
+          <span className="pdf-chip">{seminar.certificate ? 'С сертификатом' : 'Без сертификата'}</span>
         </div>
         <h3>{seminar.title}</h3>
         <p>{seminar.shortDescription}</p>

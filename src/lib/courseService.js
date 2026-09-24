@@ -82,6 +82,7 @@ export function mapCourse(row, currentUser = null) {
       photo: row.lecturer_photo || '',
     },
     certificate: row.certificate,
+    academicHours: row.academic_hours ?? null,
     rating: Number(row.rating || 5),
     createdBy: row.created_by,
     author: author ? {
