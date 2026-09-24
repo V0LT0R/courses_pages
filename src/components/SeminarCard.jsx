@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import CourseRating from './CourseRating';
 
 export default function SeminarCard({ seminar }) {
   return (
@@ -13,7 +14,7 @@ export default function SeminarCard({ seminar }) {
         <p>{seminar.shortDescription}</p>
         <div className="meta-row">
           <span>{seminar.date}</span>
-          <span>⭐ {seminar.rating}</span>
+          <CourseRating course={seminar} />
         </div>
         <div className="card-actions">
           <Link to={`/seminars/${seminar.slug || seminar.id}`} className="text-link">Подробнее</Link>

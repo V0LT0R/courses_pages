@@ -152,3 +152,66 @@ test('migration replay preserves types, accepted answers, disabled tests and imm
   assert.equal((await query('select certificate from public.courses where id=$1', [course]))[0].certificate, false);
   assert.equal((await query('select academic_hours_snapshot from public.certificates where course_id=$1', [course]))[0].academic_hours_snapshot, 18);
 });
+
+test('ratings require real completion; one vote per participant, public averages and private identities', async () => {
+  const id = await save({ ...payload('rated-seminar', null), rating: 1 });
+  assert.equal(Number((await query('select rating from public.courses where id=$1', [id]))[0].rating), 5);
+  // Historical author-entered ratings must not affect the public aggregate.
+  await query('update public.courses set rating=1 where id=$1', [id]);
+  const summary = async () => {
+    await db.exec('begin; set local role anon;');
+    try {
+      const rows = await query('select * from public.get_course_rating_summaries($1)', [[id]]);
+      await db.exec('commit'); return rows[0];
+    } catch (error) { await db.exec('rollback'); throw error; }
+  };
+  assert.deepEqual(await summary(), { course_id: id, rating: '5', rating_count: 0 });
+  await assert.rejects(asUser(student, 'select public.rate_course($1,4)', [id]), /Complete all/);
+  await asUser(student, 'select public.enroll_in_course($1)', [id]);
+  await assert.rejects(asUser(student, 'select public.rate_course($1,4)', [id]), /Complete all/);
+  await ready(id);
+  for (const rating of [null, 0, 6, -1, 1.5]) await assert.rejects(asUser(student, 'select public.rate_course($1,$2)', [id, rating]));
+  assert.ok((await query('select completed_at from public.enrollments where course_id=$1 and user_id=$2', [id, student]))[0].completed_at);
+  assert.equal((await query('select count(*)::int n from public.course_ratings where course_id=$1', [id]))[0].n, 0);
+  const before = (await query('select updated_at from public.courses where id=$1', [id]))[0];
+  await asUser(student, 'select public.rate_course($1,4)', [id]);
+  await asUser(student, 'select public.rate_course($1,2)', [id]);
+  assert.deepEqual(await summary(), { course_id: id, rating: '2.0', rating_count: 1 });
+  assert.deepEqual((await query('select updated_at from public.courses where id=$1', [id]))[0], before);
+  await ready(id, stranger);
+  await asUser(stranger, 'select public.rate_course($1,5)', [id]);
+  assert.deepEqual(await summary(), { course_id: id, rating: '3.5', rating_count: 2 });
+  const own = await asUser(student, 'select * from public.course_ratings where course_id=$1', [id]);
+  assert.equal(own.length, 1); assert.equal(own[0].user_id, student);
+  assert.deepEqual(await asUser(admin, 'select * from public.course_ratings where course_id=$1', [id]), []);
+  for (const sql of [
+    'update public.course_ratings set rating=5 where course_id=$1',
+    'delete from public.course_ratings where course_id=$1',
+    `insert into public.course_ratings(course_id,user_id,rating) values($1,'${admin}',5)`,
+  ]) await assert.rejects(asUser(student, sql, [id]), /permission denied/);
+  await db.exec('begin; set local role anon;');
+  await assert.rejects(query('select * from public.course_ratings'), /permission denied/);
+  await db.exec('rollback; begin; set local role anon;');
+  await assert.rejects(query('select public.rate_course($1,5)', [id]), /permission denied/);
+  await db.exec('rollback');
+  const rows = await query('select * from public.course_ratings order by user_id');
+  await db.exec(fs.readFileSync('supabase/ratings_update.sql', 'utf8'));
+  await db.exec(fs.readFileSync('supabase/ratings_update.sql', 'utf8'));
+  await db.exec(fs.readFileSync('supabase/migrate_existing_database.sql', 'utf8').replace(/create extension if not exists pgcrypto;/ig, ''));
+  assert.deepEqual(await query('select * from public.course_ratings order by user_id'), rows);
+  assert.deepEqual(await summary(), { course_id: id, rating: '3.5', rating_count: 2 });
+});
+
+test('a seminar with a test requires a passing attempt before rating, but no certificate request', async () => {
+  const id = await save(payload('rating-after-test'));
+  await ready(id);
+  await assert.rejects(asUser(student, 'select public.rate_course($1,5)', [id]), /passed non-expired/);
+  const failed = await start(id);
+  await submit(failed, []);
+  await assert.rejects(asUser(student, 'select public.rate_course($1,5)', [id]), /passed non-expired/);
+  const passed = await start(id);
+  await submit(passed, await answers(passed));
+  await asUser(student, 'select public.rate_course($1,5)', [id]);
+  assert.equal((await query('select count(*)::int n from public.certificates where course_id=$1', [id]))[0].n, 0);
+  assert.equal((await asUser(student, 'select rating from public.course_ratings where course_id=$1', [id]))[0].rating, 5);
+});

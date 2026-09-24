@@ -4,6 +4,7 @@ import { sendCertificateData } from './certificateApi';
 import { apiRequest, API_URL } from './api';
 import { userMessage } from './errors';
 import { getCourseTestForEdit } from './testService';
+import { withCourseRatings } from './ratingService';
 
 const COURSE_BUCKET = 'course-files';
 const CACHE_TTL = 60_000;
@@ -83,7 +84,8 @@ export function mapCourse(row, currentUser = null) {
     },
     certificate: row.certificate,
     academicHours: row.academic_hours ?? null,
-    rating: Number(row.rating || 5),
+    rating: Number(row.rating_summary?.rating ?? 5),
+    ratingCount: Number(row.rating_summary?.rating_count ?? 0),
     createdBy: row.created_by,
     author: author ? {
       id: author.id,
@@ -199,7 +201,7 @@ export async function listCourses(currentUser = null) {
   );
 
   if (error) throw new Error(userMessage(error));
-  return setCached(cacheKey, (data || []).map((row) => mapCourse(row, currentUser)));
+  return setCached(cacheKey, (await withCourseRatings(data || [])).map((row) => mapCourse(row, currentUser)));
 }
 
 export async function getCourseBySlug(slug, currentUser = null) {
@@ -219,7 +221,7 @@ export async function getCourseBySlug(slug, currentUser = null) {
 
   if (error) throw new Error(userMessage(error));
   if (!data) return null;
-  return setCached(cacheKey, mapCourse(data, currentUser));
+  return setCached(cacheKey, mapCourse((await withCourseRatings([data]))[0], currentUser));
 }
 
 export async function getCourseByUuid(courseId, currentUser = null) {
@@ -239,7 +241,7 @@ export async function getCourseByUuid(courseId, currentUser = null) {
 
   if (error) throw new Error(userMessage(error));
   if (!data) return null;
-  return setCached(cacheKey, mapCourse(data, currentUser));
+  return setCached(cacheKey, mapCourse((await withCourseRatings([data]))[0], currentUser));
 }
 
 export async function getCourseSections(courseUuid) {
@@ -445,9 +447,10 @@ export async function listMyEnrollments(currentUser = null) {
     .order('enrolled_at', { ascending: false });
 
   if (error) throw new Error(userMessage(error));
+  const ratedCourses = new Map((await withCourseRatings((data || []).map(row => row.course).filter(Boolean))).map(row => [row.id, row]));
   return (data || []).map((row) => ({
     ...row,
-    course: mapCourse(row.course, currentUser),
+    course: mapCourse(ratedCourses.get(row.course?.id), currentUser),
   }));
 }
 
@@ -515,7 +518,7 @@ export async function listMyCertificates() {
 export async function listCoursePage(currentUser,page=0,pageSize=12,signal){
  const {data,count,error}=await supabase.from('courses').select('*',{count:'exact'}).is('archived_at',null)
  .order('created_at',{ascending:false}).order('id',{ascending:false}).range(page*pageSize,(page+1)*pageSize-1).abortSignal(signal);
- if(error)throw error;return {items:(data||[]).map(row=>mapCourse(row,currentUser)),count};
+ if(error)throw error;return {items:(await withCourseRatings(data||[],signal)).map(row=>mapCourse(row,currentUser)),count};
 }
 export async function getMyCourseCertificate(courseId){
  const {data:{session}}=await supabase.auth.getSession();if(!session)return null;

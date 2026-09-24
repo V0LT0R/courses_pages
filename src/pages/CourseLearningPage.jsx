@@ -1,4 +1,5 @@
 import TestQuestion from '../components/TestQuestion';
+import CourseRatingForm from '../components/CourseRatingForm';
 import { answerPayload } from '../lib/testQuestions';
 import { userMessage } from '../lib/errors';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -107,6 +108,7 @@ export default function CourseLearningPage() {
   const { user } = useAuth();
   const loadGeneration=useRef(0);
   const [course, setCourse] = useState(null);
+  const [enrolled, setEnrolled] = useState(false);
   const [sections, setSections] = useState([]);
   const [progress, setProgress] = useState([]);
   const [testSummary, setTestSummary] = useState(null);
@@ -154,6 +156,7 @@ export default function CourseLearningPage() {
       if(generation!==loadGeneration.current)return;
       setCertificateResult(savedCertificate);
       setCourse(data.course);
+      setEnrolled(Boolean(data.enrollment));
       setSections(data.sections);
       setProgress(data.progress);
       setTestSummary(summary);
@@ -348,6 +351,7 @@ export default function CourseLearningPage() {
           {error ? <div className="error-text">{error}</div> : null}
           {message ? <div className="success-text">{message}</div> : null}
           {allCompleted && !hasTest && !testAttempt && <div className="success-text">Семинар завершён. Вы ознакомились со всеми материалами. Сертификат не предусмотрен.</div>}
+          {enrolled && allCompleted && (!hasTest || testSummary?.bestPassed) && !testAttempt && <CourseRatingForm key={`${course.uuid}:${user.id}`} courseId={course.uuid} />}
           {certificateResult ? (
             <div className="certificate-result-card">
               <div>

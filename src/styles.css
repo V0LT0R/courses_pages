@@ -222,7 +222,11 @@ button, input, textarea { font: inherit; }
 .cards-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .card-image { height: 220px; width: 100%; object-fit: cover; }
 .card-body { padding: 24px; }
-.seminar-card { overflow: hidden; }
+.seminar-card { overflow: hidden; display: flex; flex-direction: column; }
+.seminar-card .card-body { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.seminar-card .meta-row { margin-top: auto; padding-top: 4px; align-items: center; }
+.seminar-card .card-actions { flex-wrap: wrap; gap: 12px; }
+.seminar-card .card-actions > a { min-height: 44px; display: inline-flex; align-items: center; }
 .seminar-card h3, .news-card h3 { margin: 12px 0; font-size: 1.4rem; }
 .badge {
   display: inline-flex;
@@ -1977,4 +1981,50 @@ button:disabled,
     grid-template-columns: 22px 32px minmax(0, 1fr);
     padding: 12px;
   }
+}
+
+/* Seminar forms and participant ratings keep the existing palette and controls. */
+.course-rating { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.course-rating small { color: #5b6780; font-size: 0.78rem; font-weight: 400; }
+.duration-field { display: flex; flex-direction: column; gap: 8px; font-weight: 700; }
+.duration-inputs { display: flex; gap: 10px; }
+.duration-inputs > * { min-width: 0; flex: 1; }
+.rating-help { align-self: center; font-size: 0.9rem; }
+.rating-help p { margin: 6px 0 0; color: #5b6780; line-height: 1.5; }
+.seminar-form .form-grid { row-gap: 20px; }
+.seminar-form .form-grid > * { min-width: 0; }
+.seminar-form input, .seminar-form select, .seminar-form textarea { font: inherit; color: var(--text); }
+.seminar-form small { font-weight: 400; line-height: 1.5; }
+.seminar-form .section-editor-head { margin-bottom: 18px; align-items: center; }
+.seminar-form .test-question-editor .section-editor-head { margin-bottom: 0; }
+.seminar-form .course-builder-head > div { flex: 1 1 280px; }
+.seminar-form .course-builder-head > button { flex-shrink: 0; }
+.seminar-form .cta-button,
+.seminar-form .ghost-inline-button,
+.course-rating-form button,
+.course-rating-prompt button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; line-height: 1.35; text-align: center; }
+.seminar-form .test-question-editor > label { display: grid; gap: 8px; font-weight: 700; }
+.seminar-form .test-question-editor > label select,
+.seminar-form .test-question-editor > label textarea { width: 100%; padding: 12px 14px; border: 1px solid #d9e2f0; border-radius: 12px; background: white; font: inherit; }
+.seminar-form .test-option-editor > button { padding: 8px; min-width: 42px; }
+.course-rating-form { margin: 0 0 24px; padding: 22px; display: grid; gap: 14px; border: 1px solid #dbe7ff; border-radius: 20px; background: #f7faff; }
+.course-rating-form h3 { margin: 0 0 8px; }
+.course-rating-form p { margin: 0; line-height: 1.5; }
+.course-rating-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.course-rating-form legend { margin-bottom: 8px; font-weight: 700; }
+.rating-stars { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rating-stars label { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid #d4ddec; border-radius: 10px; background: white; cursor: pointer; color: #73809b; font-size: 30px; }
+.rating-stars label.selected { color: #ae7200; border-color: #d7ad4b; background: #fff9e5; }
+.rating-stars input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.rating-stars label:focus-within { outline: 3px solid var(--blue); outline-offset: 3px; }
+.rating-stars label:has(input:disabled) { opacity: 0.65; cursor: default; }
+.rating-value { margin-left: 6px; font-size: 0.9rem; }
+.course-rating-form [role="status"]:empty { display: none; }
+.course-rating-prompt { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+@media (max-width: 620px) {
+  .seminar-form .course-builder, .seminar-form .section-editor-card { padding: 16px; }
+  .seminar-form .course-builder-head > button { width: 100%; }
+  .seminar-form .mini-actions { gap: 6px; }
+  .course-rating-form { padding: 16px; }
+  .rating-value { flex-basis: 100%; margin: 6px 0 0; }
 }

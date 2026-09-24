@@ -675,7 +675,7 @@ begin
       slug, title, category, date_text, duration, format, location,
       image_url, short_description, description, outcomes,
       lecturer_name, lecturer_role, lecturer_bio, lecturer_photo,
-      certificate, academic_hours, rating, created_by
+      certificate, academic_hours, created_by
     ) values (
       payload_slug,
       payload_title,
@@ -694,7 +694,6 @@ begin
       left(btrim(coalesce(check_payload#>>'{lecturer,photo}', '')), 2000),
       has_test,
       hours_value,
-      greatest(0, least(5, coalesce((check_payload->>'rating')::numeric, 5))),
       auth.uid()
     )
     returning id into course_id_value;
@@ -732,8 +731,7 @@ begin
       lecturer_bio = left(btrim(coalesce(check_payload#>>'{lecturer,bio}', '')), 5000),
       lecturer_photo = left(btrim(coalesce(check_payload#>>'{lecturer,photo}', '')), 2000),
       certificate = has_test,
-      academic_hours = hours_value,
-      rating = greatest(0, least(5, coalesce((check_payload->>'rating')::numeric, 5)))
+      academic_hours = hours_value
     where c.id = course_id_value;
   end if;
 

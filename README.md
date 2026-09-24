@@ -1,5 +1,7 @@
 # AQUAGEO — семинары и тренинги
 
+**Обновление от 25 сентября 2026:** необязательные оценки участников, автоматический рейтинг и улучшенный редактор. Перед запуском новой версии примените `supabase/ratings_update.sql`; инструкции — [docs/SEMINAR_RATINGS_UPDATE.md](docs/SEMINAR_RATINGS_UPDATE.md).
+
 **Обновление от 24 сентября 2026:** необязательный тест, четыре типа вопросов и сертификат по образцу. Порядок ручного обновления Supabase — [docs/SUPABASE_SEMINARS_UPDATE.md](docs/SUPABASE_SEMINARS_UPDATE.md); текущие результаты проверки — [docs/SEMINAR_VALIDATION_2026-09-24.md](docs/SEMINAR_VALIDATION_2026-09-24.md).
 
 Полный React/Express проект с Supabase Auth/PostgreSQL/Storage. Код изменён и проверен локально. Допуск к production требует применения SQL на staging и проверки реальной конфигурации Auth/Storage/SMTP/домена. Результаты выполненных проверок находятся в `VALIDATION_REPORT.md`; требования и границы защиты — в `SECURITY.md`.

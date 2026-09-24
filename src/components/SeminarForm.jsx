@@ -4,6 +4,7 @@ import { normalizeSlug, uploadCourseImage, uploadCoursePdf } from '../lib/course
 import { PASSING_SCORE_OPTIONS } from '../lib/testService';
 import { QUESTION_TYPES, questionPayload, validateTest } from '../lib/testQuestions';
 import { safeHttpUrl } from '../lib/security';
+import { SEMINAR_FORMATS, DURATION_UNITS, normalizeSeminarFormat, toDateInput, formatSeminarDate, parseDuration, formatDuration } from '../lib/seminarFields';
 
 const defaultImage = 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1200&q=80';
 const defaultLecturerPhoto = 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=600&q=80';
@@ -13,7 +14,7 @@ const initialState = {
   slug: '',
   category: '',
   date: '',
-  duration: '',
+  ...parseDuration(''),
   format: '',
   location: '',
   image: defaultImage,
@@ -26,7 +27,6 @@ const initialState = {
   lecturerPhoto: defaultLecturerPhoto,
   testEnabled: true,
   academicHours: '',
-  rating: 5,
 };
 
 function createSection(index = 1) {
@@ -104,9 +104,9 @@ function mapSeminarToForm(seminar) {
     title: seminar.title || '',
     slug: seminar.slug || seminar.id || '',
     category: seminar.category || '',
-    date: seminar.date || '',
-    duration: seminar.duration || '',
-    format: seminar.format || '',
+    date: toDateInput(seminar.date),
+    ...parseDuration(seminar.duration),
+    format: normalizeSeminarFormat(seminar.format),
     location: seminar.location || '',
     image: seminar.image || defaultImage,
     shortDescription: seminar.shortDescription || '',
@@ -118,7 +118,6 @@ function mapSeminarToForm(seminar) {
     lecturerPhoto: seminar.lecturer?.photo || defaultLecturerPhoto,
     testEnabled: Boolean(seminar.test?.enabled),
     academicHours: seminar.academicHours ?? '',
-    rating: seminar.rating || 5,
   };
 }
 
@@ -335,8 +334,8 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
     title: form.title.trim(),
     slug: generatedSlug,
     category: form.category.trim(),
-    date: form.date.trim(),
-    duration: form.duration.trim(),
+    date: formatSeminarDate(form.date),
+    duration: formatDuration(form),
     format: form.format.trim(),
     location: form.location.trim(),
     image: form.image.trim(),
@@ -351,7 +350,6 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
     },
     certificate: form.testEnabled,
     academicHours: form.academicHours === '' ? null : Number(form.academicHours),
-    rating: Number(form.rating || 5),
     sections: sections.map((section) => ({
       id: section.id,
       title: section.title.trim(),
@@ -422,11 +420,22 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
         <label><span>Название</span><input name="title" value={form.title} onChange={handleChange} required /></label>
         <label><span>Slug / URL</span><input name="slug" value={form.slug} onChange={handleChange} placeholder="naprimer-ai-seminar" /></label>
         <label><span>Категория</span><input name="category" value={form.category} onChange={handleChange} required /></label>
-        <label><span>Дата</span><input name="date" value={form.date} onChange={handleChange} required /></label>
-        <label><span>Длительность</span><input name="duration" value={form.duration} onChange={handleChange} required /></label>
-        <label><span>Формат</span><input name="format" value={form.format} onChange={handleChange} required /></label>
-        <label><span>Локация</span><input name="location" value={form.location} onChange={handleChange} required /></label>
-        <label><span>Рейтинг</span><input name="rating" type="number" min="1" max="5" step="0.1" value={form.rating} onChange={handleChange} /></label>
+        <label><span>Дата</span><input name="date" type="date" min="1000-01-01" max="9999-12-31" value={form.date} onChange={handleChange} required />{seminar?.date && !toDateInput(seminar.date) && <small>Ранее: {seminar.date}. Выберите дату в календаре.</small>}</label>
+        <div className="duration-field" role="group" aria-label="Длительность">
+          <span>Длительность</span>
+          <div className="duration-inputs">
+            {form.durationUnit !== 'custom' && <input name="durationAmount" type="number" min="0.1" max="10000" step="0.1" aria-label="Количество единиц длительности" value={form.durationAmount} onChange={handleChange} placeholder="Например, 3" required />}
+            <select name="durationUnit" aria-label="Единица длительности" value={form.durationUnit} onChange={handleChange}>{Object.entries(DURATION_UNITS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          </div>
+          {form.durationUnit === 'custom' && <input name="durationCustom" aria-label="Длительность в свободной форме" value={form.durationCustom} onChange={handleChange} placeholder="Например, 2 занятия по 90 минут" required />}
+        </div>
+        <label><span>Формат</span><select name="format" value={form.format} onChange={handleChange} required>
+          <option value="" disabled>Выберите формат</option>
+          {SEMINAR_FORMATS.map(value => <option key={value} value={value}>{value}</option>)}
+          {form.format && !SEMINAR_FORMATS.includes(form.format) && <option value={form.format}>{form.format} (текущее значение)</option>}
+        </select></label>
+        <label><span>{form.format === 'Онлайн' ? 'Платформа / место проведения' : 'Локация'}</span><input name="location" value={form.location} onChange={handleChange} placeholder={form.format === 'Онлайн' ? 'Например, Zoom' : 'Город, площадка или адрес'} required /></label>
+        <div className="rating-help"><strong>Рейтинг участников</strong><p>Рассчитывается автоматически по оценкам после прохождения. Пока оценок нет — 5 из 5.</p></div>
         <label className="full"><span>Короткое описание</span><textarea name="shortDescription" value={form.shortDescription} onChange={handleChange} rows="3" required /></label>
         <label className="full"><span>Полное описание</span><textarea name="description" value={form.description} onChange={handleChange} rows="5" required /></label>
         <label className="full"><span>Результаты обучения — по одному пункту с новой строки</span><textarea name="outcomesText" value={form.outcomesText} onChange={handleChange} rows="5" /></label>
@@ -457,8 +466,8 @@ export default function SeminarForm({ seminar, onSubmit, onCancel, submitText })
               <div className="section-editor-head">
                 <strong>Раздел {sectionIndex + 1}</strong>
                 <div className="mini-actions">
-                  <button type="button" className="ghost-inline-button small" onClick={() => moveSection(sectionIndex, -1)}>↑</button>
-                  <button type="button" className="ghost-inline-button small" onClick={() => moveSection(sectionIndex, 1)}>↓</button>
+                  <button type="button" className="ghost-inline-button small" aria-label="Переместить раздел вверх" disabled={sectionIndex === 0} onClick={() => moveSection(sectionIndex, -1)}>↑</button>
+                  <button type="button" className="ghost-inline-button small" aria-label="Переместить раздел вниз" disabled={sectionIndex === sections.length - 1} onClick={() => moveSection(sectionIndex, 1)}>↓</button>
                   <button type="button" className="ghost-inline-button small danger" onClick={() => removeSection(sectionIndex)} disabled={sections.length === 1}>Удалить</button>
                 </div>
               </div>

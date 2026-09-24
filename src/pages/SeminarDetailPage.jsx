@@ -1,4 +1,5 @@
 import { userMessage } from '../lib/errors';
+import CourseRating from '../components/CourseRating';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -84,6 +85,7 @@ export default function SeminarDetailPage() {
                 <span>{seminar.date}</span>
                 <span>{seminar.duration}</span>
                 <span>{seminar.format}</span>
+                <CourseRating course={seminar} />
               </div>
               <div className="hero-actions compact-actions">
                 {enrollment ? (

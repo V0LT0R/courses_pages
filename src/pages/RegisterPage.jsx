@@ -1,4 +1,5 @@
 import { userMessage } from '../lib/errors';
+import CourseRating from '../components/CourseRating';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -76,6 +77,7 @@ export default function RegisterPage() {
           <span className="badge">Регистрация на семинар</span>
           <h1>{seminar?.title || 'Семинар'}</h1>
           {seminar ? <p>{seminar.date} · {seminar.format} · {seminar.location}</p> : null}
+          {seminar && <CourseRating course={seminar} />}
 
           {isAuthenticated ? (
             <div className="success-text">

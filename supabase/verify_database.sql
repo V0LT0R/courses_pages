@@ -1,6 +1,6 @@
 -- READ ONLY. Run after the complete migration. Every line should be PASS.
-with tables(name) as (values('profiles'),('courses'),('course_sections'),('content_blocks'),('enrollments'),('section_progress'),('certificate_requests'),('course_tests'),('test_questions'),('test_options'),('test_question_answers'),('test_attempts'),('certificates'),('certificate_pdfs'),('legacy_certificates'),('audit_log'),('course_revisions'),('app_settings')),
-fns(sig) as (values('enroll_in_course(uuid)'),('mark_section_completed(uuid)'),('start_course_test(uuid)'),('submit_course_test(uuid,jsonb)'),('finalize_course_completion(uuid)'),('issue_certificate(uuid)'),('save_course_with_content(uuid,timestamp with time zone,jsonb)'),('app_readiness()')),
+with tables(name) as (values('profiles'),('courses'),('course_sections'),('content_blocks'),('enrollments'),('section_progress'),('certificate_requests'),('course_tests'),('test_questions'),('test_options'),('test_question_answers'),('test_attempts'),('certificates'),('certificate_pdfs'),('legacy_certificates'),('audit_log'),('course_revisions'),('app_settings'),('course_ratings')),
+fns(sig) as (values('enroll_in_course(uuid)'),('mark_section_completed(uuid)'),('start_course_test(uuid)'),('submit_course_test(uuid,jsonb)'),('finalize_course_completion(uuid)'),('issue_certificate(uuid)'),('save_course_with_content(uuid,timestamp with time zone,jsonb)'),('app_readiness()'),('rate_course(uuid,integer)')),
 checks as (
  select 'table + RLS: '||t.name as object,exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname=t.name and c.relrowsecurity) as ok from tables t
  union all select 'RPC: '||sig,to_regprocedure('public.'||sig) is not null from fns
@@ -26,6 +26,9 @@ checks as (
  union all select 'certificate academic hours snapshot',exists(select 1 from information_schema.columns where table_schema='public' and table_name='certificates' and column_name='academic_hours_snapshot')
  union all select 'certificate availability matches enabled test',not exists(select 1 from public.courses c where c.certificate is distinct from exists(select 1 from public.course_tests t where t.course_id=c.id and t.enabled))
  union all select 'standalone test mutation is not exposed',not has_function_privilege('authenticated','public.save_course_test(uuid,integer,integer,jsonb)','EXECUTE')
+ union all select 'rating aggregate is public',case when to_regprocedure('public.get_course_rating_summaries(uuid[])') is null then false else has_function_privilege('anon','public.get_course_rating_summaries(uuid[])','EXECUTE') and has_function_privilege('authenticated','public.get_course_rating_summaries(uuid[])','EXECUTE') end
+ union all select 'rating identities deny anonymous select',case when to_regclass('public.course_ratings') is null then false else not has_table_privilege('anon','public.course_ratings','SELECT') end
+ union all select 'one rating per user/course',exists(select 1 from pg_constraint where conrelid=to_regclass('public.course_ratings') and contype='p' and pg_get_constraintdef(oid)='PRIMARY KEY (course_id, user_id)')
 )
 select case when ok then 'PASS' else 'FAIL' end as status,object from checks order by status,object;
 -- Historical rows may predate NOT VALID constraints. Inspect these separately before VALIDATE CONSTRAINT.

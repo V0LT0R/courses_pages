@@ -2,6 +2,8 @@ export function userMessage(error) {
  const text=String(error?.message||error||'');
  const code=String(error?.code||'');
  const rules=[[/COURSE_EDIT_CONFLICT/,'Курс уже изменён другим пользователем. Откройте редактор заново.'],
+ [/RATING_INVALID/,'Выберите оценку от 1 до 5.'],
+ [/A passed non-expired test attempt is required/,'Сначала успешно пройдите итоговый тест.'],
  [/SECTION_HAS_PROGRESS/,'Этот раздел уже проходили участники. Его нельзя удалить; создайте новый курс для другой программы.'],
  [/ATTEMPT_LIMIT/,'За 24 часа разрешено не более 10 попыток. Попробуйте позже.'],
  [/already been submitted/,'Эта попытка уже завершена. Обновите страницу, чтобы увидеть результат.'],
