@@ -1,11 +1,53 @@
+# Dependencies, builds and caches
 node_modules/
 dist/
+.vite/
+.cache/
+.eslintcache
+*.tsbuildinfo
+
+# Local environment and private keys
 .env
-# .DS_Store
-*.bak
-server/uploads/
-*.log
-tmp/
-output/
 .env.*
 !.env.example
+*.local
+*.key
+*.p12
+*.pfx
+
+# Generated certificates and local previews
+/generated-certificates/
+/generated-certificates.zip
+tmp/
+output/
+
+# Runtime uploads (keep the directory placeholder)
+/server/uploads/*
+!/server/uploads/pdfs/
+/server/uploads/pdfs/*
+!/server/uploads/pdfs/.gitkeep
+
+# Test reports and Supabase CLI state
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+/supabase/.temp/
+/supabase/.branches/
+
+# Logs, backups and editor/OS files
+*.log
+*.bak
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
