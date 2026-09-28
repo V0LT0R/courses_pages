@@ -89,7 +89,7 @@ export default function SeminarDetailPage() {
               </div>
               <div className="hero-actions compact-actions">
                 {enrollment ? (
-                  <Link to={`/learn/${seminar.slug}`} className="cta-button">Перейти к материалам</Link>
+                  <Link to={`/learn/${seminar.slug}`} className="cta-button">{enrollment.completed_at ? 'Открыть курс' : 'Продолжить курс'}</Link>
                 ) : (
                   <button className="cta-button" type="button" onClick={handleEnroll} disabled={enrolling}>
                     {enrolling ? 'Регистрируем...' : 'Зарегистрироваться на семинар'}

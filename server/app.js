@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { corsOptions, createRateLimiter, requestId, securityHeaders } from './security.js';
-import { certificateInput,certificateNumber,detectFile,managerInput,publicBaseUrl,httpError } from './validation.js';
+import { certificateInput,certificateNumber,certificateFilters,manualCertificateInput,detectFile,managerInput,publicBaseUrl,httpError } from './validation.js';
 import { generateCertificatePdf,renderCertificateHtml,escapeHtml } from './certificateService.js';
 
 /** Dependency injection lets HTTP tests use a stub without claiming to exercise PostgreSQL. */
@@ -26,6 +26,16 @@ export function createApp({gateway,env=process.env,logger=console,renderPdf=gene
  const find=async number=>{const cert=await gateway.find(certificateNumber(number));if(!cert)throw httpError(404,'Сертификат не найден.');return links(cert);};
  app.post('/api/certificates/generate',limit('issue',30),auth,async(req,res)=>{
    const cert=await gateway.issue(req.user,certificateInput(req.body));res.json({ok:true,...links(cert)});
+ });
+ app.get('/api/admin/certificates',limit('admin-certificates',90),auth,async(req,res)=>{
+   await gateway.requireRole(req.user,['admin']);
+   const result=await gateway.listCertificates(req.user,certificateFilters(req.query));
+   res.json({...result,items:result.items.map(links)});
+ });
+ app.post('/api/admin/certificates',limit('admin-issue',30),auth,async(req,res)=>{
+   await gateway.requireRole(req.user,['admin']);
+   const cert=await gateway.createCertificate(req.user,manualCertificateInput(req.body));
+   res.status(201).json({ok:true,...links(cert)});
  });
  app.get('/api/v1/verify/:number',limit('verify',90),async(req,res)=>{const cert=await find(req.params.number);res.json({...cert,valid:cert.status==='active'});});
  app.post('/api/v1/verify/manual',limit('manual',40),async(req,res)=>{const cert=await find(req.body?.certificate_number||req.body?.certificateNumber);

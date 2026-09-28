@@ -2242,5 +2242,176 @@ $$;
 revoke all on function public.get_course_rating_summaries(uuid[]) from public;
 grant execute on function public.get_course_rating_summaries(uuid[]) to anon, authenticated;
 
+-- Manual issuance and imported documents share the authoritative certificate registry.
+alter table public.certificates alter column user_id drop not null;
+alter table public.certificates alter column course_id drop not null;
+alter table public.certificates add column if not exists issuance_source text not null default 'course';
+alter table public.certificates add column if not exists issued_by uuid references public.profiles(id) on delete restrict;
+do $$ begin
+ if not exists(select 1 from pg_constraint where conrelid='public.certificates'::regclass and conname='certificate_source_valid') then
+  alter table public.certificates add constraint certificate_source_valid check (
+   issuance_source in ('course','manual','imported') and
+   (issuance_source <> 'course' or (user_id is not null and course_id is not null))
+  );
+ end if;
+end $$;
+drop policy if exists certificates_owner on public.certificates;
+create policy certificates_owner on public.certificates for select to authenticated
+ using(public.current_user_role()='admin' or user_id=auth.uid() or public.can_manage_course(course_id));
+
+-- Serialize numbers across both registries. Historical course/legacy pairs remain supported.
+create or replace function public.guard_certificate_number() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+ perform pg_advisory_xact_lock(hashtextextended(new.certificate_number, 713));
+ if tg_table_name='certificates' then
+  if new.issuance_source <> 'course' and exists(select 1 from public.legacy_certificates where certificate_number=new.certificate_number) then
+   raise exception 'CERTIFICATE_NUMBER_EXISTS' using errcode='23505';
+  end if;
+ elsif exists(select 1 from public.certificates where certificate_number=new.certificate_number and issuance_source <> 'course') then
+  raise exception 'CERTIFICATE_NUMBER_EXISTS' using errcode='23505';
+ end if;
+ return new;
+end $$;
+revoke all on function public.guard_certificate_number() from public,anon,authenticated;
+drop trigger if exists certificate_number_guard on public.certificates;
+create trigger certificate_number_guard before insert on public.certificates for each row execute function public.guard_certificate_number();
+drop trigger if exists legacy_certificate_number_guard on public.legacy_certificates;
+create trigger legacy_certificate_number_guard before insert on public.legacy_certificates for each row execute function public.guard_certificate_number();
+
+-- Internal helper; callers must pass through one of the authorized entry points below.
+create or replace function public.create_certificate_record(check_payload jsonb, check_source text)
+returns public.certificates language plpgsql security definer set search_path='' as $$
+declare
+ target public.certificates%rowtype;
+ number_value text := btrim(check_payload->>'certificate_number');
+ name_value text := btrim(check_payload->>'full_name');
+ title_value text := btrim(check_payload->>'course_name');
+ issuer_value text := btrim(check_payload->>'issuer');
+ city_value text := btrim(check_payload->>'city');
+ date_value date;
+ hours_value integer;
+ score_value integer;
+ course_value uuid;
+ user_value uuid;
+begin
+ if check_source not in ('manual','imported') or jsonb_typeof(check_payload) is distinct from 'object' then
+  raise exception 'CERTIFICATE_INVALID' using errcode='22023';
+ end if;
+ if number_value is null or number_value !~ '^[A-Za-z0-9_-]{8,128}$' or
+    coalesce(length(name_value),0) not between 2 and 120 or
+    coalesce(length(title_value),0) not between 1 and 300 or
+    coalesce(length(issuer_value),0) not between 1 and 160 or
+    coalesce(length(city_value),0) not between 1 and 120 or
+    coalesce(check_payload->>'issued_on','') !~ '^\d{4}-\d{2}-\d{2}$' then
+  raise exception 'CERTIFICATE_INVALID' using errcode='22023';
+ end if;
+ date_value := (check_payload->>'issued_on')::date;
+ if date_value < date '1900-01-01' or date_value > (clock_timestamp() at time zone 'UTC')::date then
+  raise exception 'CERTIFICATE_INVALID_DATE' using errcode='22023';
+ end if;
+ if coalesce(check_payload->>'academic_hours','')<>'' then
+  if (check_payload->>'academic_hours') !~ '^\d{1,5}$' then raise exception 'CERTIFICATE_INVALID' using errcode='22023'; end if;
+  hours_value := (check_payload->>'academic_hours')::integer;
+  if hours_value not between 1 and 10000 then raise exception 'CERTIFICATE_INVALID' using errcode='22023'; end if;
+ end if;
+ if coalesce(check_payload->>'score','')<>'' then
+  if (check_payload->>'score') !~ '^\d{1,3}$' then raise exception 'CERTIFICATE_INVALID' using errcode='22023'; end if;
+  score_value := (check_payload->>'score')::integer;
+  if score_value not between 0 and 100 then raise exception 'CERTIFICATE_INVALID' using errcode='22023'; end if;
+ end if;
+ course_value := nullif(check_payload->>'course_id','')::uuid;
+ user_value := nullif(check_payload->>'user_id','')::uuid;
+ if course_value is not null and not exists(select 1 from public.courses where id=course_value) then
+  raise exception 'CERTIFICATE_COURSE_NOT_FOUND' using errcode='22023';
+ end if;
+ if user_value is not null and not exists(select 1 from public.profiles where id=user_value) then
+  raise exception 'CERTIFICATE_USER_NOT_FOUND' using errcode='22023';
+ end if;
+ perform pg_advisory_xact_lock(hashtextextended(number_value,713));
+ select * into target from public.certificates where certificate_number=number_value;
+ if target.id is not null then
+  -- Import retries only accept the exact original snapshot, never overwrite it.
+  if check_source='imported' and target.issuance_source='imported' and
+     (target.user_id,target.course_id,target.full_name_snapshot,target.course_title_snapshot,target.issuer_snapshot,
+      target.city_snapshot,target.academic_hours_snapshot,target.score_snapshot,target.issued_at) is not distinct from
+     (user_value,course_value,name_value,title_value,issuer_value,city_value,hours_value,score_value,date_value::timestamp at time zone 'UTC') then
+   return target;
+  end if;
+  raise exception 'CERTIFICATE_NUMBER_EXISTS' using errcode='23505';
+ end if;
+ insert into public.certificates(certificate_number,user_id,course_id,full_name_snapshot,course_title_snapshot,
+  issuer_snapshot,city_snapshot,academic_hours_snapshot,score_snapshot,issued_at,template_version,issuance_source,issued_by)
+ values(number_value,user_value,course_value,name_value,title_value,issuer_value,city_value,hours_value,score_value,
+  date_value::timestamp at time zone 'UTC',3,check_source,auth.uid()) returning * into target;
+ return target;
+end $$;
+revoke all on function public.create_certificate_record(jsonb,text) from public,anon,authenticated,service_role;
+
+create or replace function public.admin_create_certificate(check_payload jsonb)
+returns public.certificates language plpgsql security definer set search_path='' as $$
+begin
+ if auth.uid() is null or public.current_user_role()::text is distinct from 'admin' then
+  raise exception 'Admin only' using errcode='42501';
+ end if;
+ return public.create_certificate_record(check_payload,'manual');
+end $$;
+revoke all on function public.admin_create_certificate(jsonb) from public,anon;
+grant execute on function public.admin_create_certificate(jsonb) to authenticated;
+
+-- Backend import only. A record and its original PDF are committed together.
+create or replace function public.import_generated_certificate(check_payload jsonb, check_pdf text, check_sha256 text, check_verification_url text)
+returns public.certificates language plpgsql security definer set search_path='' as $$
+declare target public.certificates%rowtype;
+begin
+ if coalesce(length(check_pdf),0) not between 16 and 4000000 or
+    check_sha256 is null or check_sha256 !~ '^[a-f0-9]{64}$' or
+    check_verification_url is null or check_verification_url !~ '^https?://' then
+  raise exception 'CERTIFICATE_INVALID_PDF' using errcode='22023';
+ end if;
+ target := public.create_certificate_record(check_payload,'imported');
+ insert into public.certificate_pdfs(certificate_number,pdf_base64,sha256,verification_url)
+ values(target.certificate_number,check_pdf,check_sha256,check_verification_url) on conflict do nothing;
+ if not exists(select 1 from public.certificate_pdfs where certificate_number=target.certificate_number and sha256=check_sha256 and pdf_base64=check_pdf) then
+  raise exception 'CERTIFICATE_PDF_CONFLICT' using errcode='23505';
+ end if;
+ return target;
+end $$;
+revoke all on function public.import_generated_certificate(jsonb,text,text,text) from public,anon,authenticated;
+grant execute on function public.import_generated_certificate(jsonb,text,text,text) to service_role;
+
+create or replace function public.admin_list_certificates(check_course text default '',check_search text default '',check_page integer default 0)
+returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare result jsonb;
+begin
+ if auth.uid() is null or public.current_user_role()::text is distinct from 'admin' then
+  raise exception 'Admin only' using errcode='42501';
+ end if;
+ if check_page is null or check_page<0 or check_page>100000 or length(check_search)>160 or length(check_course)>128 then
+  raise exception 'Invalid filters' using errcode='22023';
+ end if;
+ with records as (
+  select certificate_number,course_id::text as course_id,user_id::text as user_id,full_name_snapshot as full_name,
+   course_title_snapshot as course_name,issued_at,status,issuance_source as source,
+   academic_hours_snapshot as academic_hours,issuer_snapshot as issuer,city_snapshot as city
+  from public.certificates
+  union all
+  select l.certificate_number,nullif(l.record->>'course_id',''),nullif(l.record->>'external_user_id',''),
+   coalesce(l.record->>'full_name_snapshot',l.record->>'full_name'),coalesce(l.record->>'course_title_snapshot',l.record->>'course_name'),
+   coalesce((l.record->>'issued_at')::timestamptz,l.imported_at),coalesce(l.record->>'status','active'),'legacy',
+   null::integer,coalesce(l.record->>'issuer_snapshot',l.record->>'issuer'),l.record->>'city'
+  from public.legacy_certificates l where not exists(select 1 from public.certificates c where c.certificate_number=l.certificate_number)
+ ), filtered as (
+  select * from records where
+   (coalesce(check_course,'')='' or course_id=check_course or (check_course='external' and course_id is null)) and
+   (coalesce(check_search,'')='' or position(lower(check_search) in lower(concat_ws(' ',certificate_number,full_name,course_name)))>0)
+ ), page as (select * from filtered order by issued_at desc,certificate_number offset check_page*25 limit 25)
+ select jsonb_build_object('items',coalesce((select jsonb_agg(to_jsonb(p) order by issued_at desc,certificate_number) from page p),'[]'::jsonb),
+  'count',(select count(*) from filtered),'page_size',25) into result;
+ return result;
+end $$;
+revoke all on function public.admin_list_certificates(text,text,integer) from public,anon;
+grant execute on function public.admin_list_certificates(text,text,integer) to authenticated;
+
 NOTIFY pgrst, 'reload schema';
 COMMIT;

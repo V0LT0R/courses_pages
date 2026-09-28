@@ -2021,6 +2021,37 @@ button:disabled,
 .rating-value { margin-left: 6px; font-size: 0.9rem; }
 .course-rating-form [role="status"]:empty { display: none; }
 .course-rating-prompt { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+.certificate-check-banner { margin-top: 40px; padding: 28px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.certificate-check-banner h2 { font-size: 1.4rem; margin: 0 0 10px; }
+.certificate-check-banner p { margin: 0; max-width: 650px; }
+.certificate-check-banner .cta-button { flex-shrink: 0; text-align: center; }
+.certificate-check-page { max-width: 900px; }
+.certificate-check-page h1 { font-size: clamp(1.8rem, 4vw, 3rem); }
+.certificate-check-page .form-actions, .certificate-admin .form-actions { margin-top: 18px; }
+.certificate-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.certificate-admin .toolbar-row { justify-content: space-between; margin-top: 24px; }
+.certificate-admin .admin-list-item > div:first-child { min-width: 0; flex: 1; }
+.certificate-admin .admin-list-item p, .certificate-number { overflow-wrap: anywhere; }
+.certificate-admin .item-actions { flex-shrink: 0; }
+.certificate-admin .form-grid > label { min-width: 0; }
+.certificate-facts { display: grid; gap: 18px; margin: 24px 0; }
+.certificate-facts > div { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; }
+.certificate-facts dt { color: var(--muted); }
+.certificate-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.footer-new > div { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 1000px) {
+  .footer-new { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
+}
+@media (max-width: 620px) {
+  .footer-new { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+}
+@media (max-width: 760px) {
+  .certificate-check-banner { padding: 24px; align-items: flex-start; flex-direction: column; }
+  .certificate-check-banner .cta-button { width: 100%; }
+  .certificate-admin .admin-list-item { align-items: flex-start; flex-direction: column; }
+  .certificate-facts > div { grid-template-columns: 1fr; gap: 6px; }
+  .certificate-admin .form-grid { grid-template-columns: 1fr; }
+}
 @media (max-width: 620px) {
   .seminar-form .course-builder, .seminar-form .section-editor-card { padding: 16px; }
   .seminar-form .course-builder-head > button { width: 100%; }

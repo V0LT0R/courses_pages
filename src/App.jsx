@@ -8,6 +8,7 @@ import SeminarsPage from './pages/SeminarsPage';
 import SeminarDetailPage from './pages/SeminarDetailPage';
 import RegisterPage from './pages/RegisterPage';
 import SignupPage from './pages/SignupPage';
+import CertificateCheckPage from './pages/CertificateCheckPage';
 const CourseLearningPage=lazy(()=>import('./pages/CourseLearningPage'));
 const QuestionnairePage=lazy(()=>import('./pages/QuestionnairePage'));
 const ResultsPage=lazy(()=>import('./pages/ResultsPage'));
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="*" element={<div className="container page-section"><h1>Страница не найдена</h1><Link to="/">На главную</Link></div>} />
         <Route index element={<HomePage />} />
         <Route path="seminars" element={<SeminarsPage />} />
+        <Route path="check-certificate" element={<CertificateCheckPage />} />
         <Route path="seminars/:seminarId" element={<SeminarDetailPage />} />
         <Route path="register/:seminarId" element={<RegisterPage />} />
         <Route path="signup" element={<SignupPage />} />

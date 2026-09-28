@@ -33,6 +33,23 @@ export function createGateway(env=process.env) {
       }
       return publicCertificate(Array.isArray(data)?data[0]:data);
     },
+    async listCertificates(user,filters) {
+      const result=await user.client.rpc('admin_list_certificates',{
+        check_course:filters.course,check_search:filters.search,check_page:filters.page,
+      });
+      if(result.error?.code==='PGRST202')throw httpError(503,'Требуется обновление реестра сертификатов.');
+      return check(result);
+    },
+    async createCertificate(user,payload) {
+      const {data,error}=await user.client.rpc('admin_create_certificate',{check_payload:payload});
+      if(error){
+        if(error.code==='23505')throw httpError(409,'Сертификат с таким номером или для выбранного пользователя и курса уже существует. Проверьте реестр.');
+        if(error.code==='42501')throw httpError(403,'Создавать сертификаты может только администратор.');
+        if(error.code?.startsWith('22')||error.code==='23503')throw httpError(400,'Проверьте данные сертификата, курс и пользователя.');
+        throw Object.assign(new Error('Certificate creation failed'),{code:error.code});
+      }
+      return publicCertificate(Array.isArray(data)?data[0]:data);
+    },
     async find(number) {
       const row=check(await admin.from('certificates').select('certificate_number,full_name_snapshot,course_title_snapshot,score_snapshot,issuer_snapshot,academic_hours_snapshot,city_snapshot,template_version,issued_at,status').eq('certificate_number',number).maybeSingle());
       if(row)return publicCertificate(row);

@@ -18,7 +18,7 @@ export default function SeminarCard({ seminar }) {
         </div>
         <div className="card-actions">
           <Link to={`/seminars/${seminar.slug || seminar.id}`} className="text-link">Подробнее</Link>
-          <Link to={`/register/${seminar.slug || seminar.id}`} className="cta-button small">Регистрация</Link>
+          <Link to={`/${seminar.enrollment ? 'learn' : 'register'}/${seminar.slug || seminar.id}`} className="cta-button small">{seminar.enrollment ? (seminar.enrollment.completed_at ? 'Открыть курс' : 'Продолжить курс') : 'Регистрация'}</Link>
         </div>
       </div>
     </article>

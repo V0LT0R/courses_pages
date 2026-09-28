@@ -47,6 +47,7 @@ export default function Layout() {
           <div className="footer-center">
             <NavLink to="/about">О ПРОЕКТЕ</NavLink>
             <NavLink to="/seminars">МОНИТОРИНГ</NavLink>
+            <NavLink to="/check-certificate">ПРОВЕРКА СЕРТИФИКАТА</NavLink>
           </div>
           <div className="footer-right">
             <h3>Контакты</h3>
@@ -55,7 +56,7 @@ export default function Layout() {
             <p>Проспект Мангилик Ел, C1, Astana IT University, Есиль район, Астана, Казахстан</p>
             <p>9 AM — 6 PM</p>
           </div>
-          <button className="scroll-top" onClick={scrollToTop}>
+          <button className="scroll-top" onClick={scrollToTop} aria-label="Наверх">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <path d="M12 19V5M12 5L6 11M12 5L18 11" stroke="#1a1a1a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {API_ORIGIN} from '../lib/api';
 import SeminarForm from '../components/SeminarForm';
+import AdminCertificates from '../components/AdminCertificates';
 import {
   createManager,
   getCourseForEdit,
@@ -112,6 +113,7 @@ export default function CabinetPage() {
   const [editingSeminar, setEditingSeminar] = useState(null);
   const [creating, setCreating] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
+  const [registryCourse, setRegistryCourse] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -205,6 +207,7 @@ export default function CabinetPage() {
           <div className="tab-row">
             <button className={`tab-button ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>Профиль</button>
             <button className={`tab-button ${activeTab === 'certificates' ? 'active' : ''}`} onClick={() => setActiveTab('certificates')}>Мои сертификаты</button>
+            {isAdmin && <button className={`tab-button ${activeTab === 'allCertificates' ? 'active' : ''}`} onClick={() => { setRegistryCourse(''); setActiveTab('allCertificates'); }}>Все сертификаты</button>}
             <button className={`tab-button ${activeTab === 'myCourses' ? 'active' : ''}`} onClick={() => setActiveTab('myCourses')}>Мои семинары</button>
             {canManageSeminars ? <button className={`tab-button ${activeTab === 'seminars' ? 'active' : ''}`} onClick={() => setActiveTab('seminars')}>Управление курсами</button> : null}
             {isAdmin ? <button className={`tab-button ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>Пользователи</button> : null}
@@ -213,6 +216,7 @@ export default function CabinetPage() {
           {loading ? <div className="card inset-card">Загрузка данных...</div> : null}
           {message ? <div className="success-text">{message}</div> : null}
           {error ? <div className="error-text">{error}</div> : null}
+          {activeTab === 'allCertificates' && isAdmin && <AdminCertificates key={registryCourse} courses={seminars} users={users} initialCourse={registryCourse} />}
 
           {activeTab==='certificates'?<div className="admin-list">{certificates.length?certificates.map(c=><div key={c.certificate_number} className="admin-list-item card"><div><strong>{c.course_title_snapshot}</strong><p>{c.certificate_number} · {new Date(c.issued_at).toLocaleDateString('ru-RU')}</p><p>{c.status==='revoked'?'Отозван':'Действителен'}</p></div><a className="text-link" href={`${API_ORIGIN}/verify/${c.certificate_number}`} target="_blank" rel="noreferrer">Открыть сертификат</a></div>):<p>Выданных сертификатов пока нет.</p>}</div>:null}
 
@@ -274,6 +278,7 @@ export default function CabinetPage() {
                     <div className="item-actions">
                       <Link className="text-link" to={`/seminars/${seminar.slug}`}>Открыть</Link>
                       <button className="ghost-inline-button" onClick={() => handleStartEdit(seminar)}>Редактировать</button>
+                      {isAdmin && <button className="ghost-inline-button" onClick={() => { setRegistryCourse(seminar.uuid); setActiveTab('allCertificates'); }}>Сертификаты курса</button>}
                     </div>
                   </div>
                 )) : <div className="card inset-card">Семинары пока не созданы.</div>}

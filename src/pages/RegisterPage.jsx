@@ -3,7 +3,7 @@ import CourseRating from '../components/CourseRating';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { enrollInCourse, getCourseBySlug } from '../lib/courseService';
+import { enrollInCourse, getCourseBySlug, getEnrollment } from '../lib/courseService';
 
 export default function RegisterPage() {
   const { seminarId } = useParams();
@@ -18,14 +18,22 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true); setError('');
     getCourseBySlug(seminarId, user)
-      .then((course) => {
+      .then(async (course) => {
+        if (!active) return;
         setSeminar(course);
         if (!course) setError('Семинар не найден.');
+        if (course && isAuthenticated) {
+          const enrollment = await getEnrollment(course.uuid);
+          if (active && enrollment) navigate(`/learn/${course.slug}`, { replace: true });
+        }
       })
-      .catch((err) => setError(userMessage(err)))
-      .finally(() => setLoading(false));
-  }, [seminarId, user?.id, user?.role]);
+      .catch((err) => { if (active) setError(userMessage(err)); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [seminarId, user?.id, user?.role, isAuthenticated, navigate]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;

@@ -17,6 +17,47 @@ export function certificateInput(body) {
   // Compatibility: old clients may send snapshot fields. They are ignored, never trusted.
   return uuid(body.course_id ?? body.courseId);
 }
+export function manualCertificateInput(body = {}) {
+  if (!body || Array.isArray(body) || typeof body !== 'object') throw httpError(400, 'Некорректный запрос.');
+  const text = (key, min, max) => {
+    const value = typeof body[key] === 'string' ? body[key].trim().replace(/\s+/g, ' ') : '';
+    if (value.length < min || value.length > max) throw httpError(400, 'Проверьте ФИО, название курса, организацию и город.');
+    return value;
+  };
+  const optionalInteger = (key, min, max) => {
+    const value = body[key];
+    if (value == null || value === '') return null;
+    if (!/^\d+$/.test(String(value)) || !Number.isInteger(Number(value)) || Number(value) < min || Number(value) > max)
+      throw httpError(400, 'Проверьте часы обучения и оценку.');
+    return Number(value);
+  };
+  const day = body.issued_on;
+  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
+      !Number.isFinite(Date.parse(day)) || new Date(day).toISOString().slice(0, 10) !== day ||
+      day < '1900-01-01' || day > new Date().toISOString().slice(0, 10))
+    throw httpError(400, 'Укажите существующую дату выдачи, не позднее сегодняшней.');
+  // A stable form request ID makes retries with automatic numbering use the same number.
+  const number = typeof body.certificate_number === 'string' ? body.certificate_number.trim() : '';
+  return {
+    certificate_number: certificateNumber(number || `AQ-M-${uuid(body.request_id).replaceAll('-', '').toUpperCase()}`),
+    full_name: text('full_name', 2, 120), course_name: text('course_name', 1, 300),
+    issuer: text('issuer', 1, 160), city: text('city', 1, 120), issued_on: day,
+    academic_hours: optionalInteger('academic_hours', 1, 10000), score: optionalInteger('score', 0, 100),
+    course_id: body.course_id ? uuid(body.course_id) : null,
+    user_id: body.user_id ? uuid(body.user_id) : null,
+  };
+}
+export function certificateFilters(query = {}) {
+  const course = query.course || '';
+  const search = typeof query.search === 'string' ? query.search.trim() : '';
+  const page = query.page ?? '0';
+  if (typeof course !== 'string' || (course && course !== 'external' && !/^[0-9a-f-]{36}$/i.test(course)) ||
+      (query.search != null && typeof query.search !== 'string') || search.length > 160 ||
+      !/^\d{1,6}$/.test(String(page)) || Number(page) > 100000)
+    throw httpError(400, 'Некорректные параметры поиска.');
+  if (course && course !== 'external') uuid(course);
+  return { course, search, page: Number(page) };
+}
 export function detectFile(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 12) throw httpError(400, 'Файл повреждён или имеет неподдерживаемый формат.');
   if (buffer.subarray(0,5).toString()==='%PDF-' && buffer.subarray(-2048).includes(Buffer.from('%%EOF'))) return {mime:'application/pdf',ext:'pdf',max:25*1024*1024};

@@ -94,6 +94,7 @@ export function mapCourse(row, currentUser = null) {
       role: author.role,
     } : null,
     canEdit,
+    enrollment: row.enrollment || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -201,7 +202,23 @@ export async function listCourses(currentUser = null) {
   );
 
   if (error) throw new Error(userMessage(error));
-  return setCached(cacheKey, (await withCourseRatings(data || [])).map((row) => mapCourse(row, currentUser)));
+  const rows = await withCourseEnrollments(await withCourseRatings(data || []), currentUser);
+  return setCached(cacheKey, rows.map((row) => mapCourse(row, currentUser)));
+}
+
+export async function withCourseEnrollments(rows, currentUser, signal) {
+  if (!currentUser?.id || !rows.length) return rows;
+  const byCourse = new Map();
+  // Keep PostgREST GET URLs below proxy limits even for the full admin course list.
+  for (let offset = 0; offset < rows.length; offset += 100) {
+    let request = supabase.from('enrollments').select('course_id,completed_at')
+      .eq('user_id', currentUser.id).in('course_id', rows.slice(offset, offset + 100).map(row => row.id));
+    if (signal) request = request.abortSignal(signal);
+    const { data, error } = await withTimeout(request);
+    if (error) throw error;
+    for (const row of data || []) byCourse.set(row.course_id, row);
+  }
+  return rows.map(row => ({ ...row, enrollment: byCourse.get(row.id) || null }));
 }
 
 export async function getCourseBySlug(slug, currentUser = null) {
@@ -518,7 +535,9 @@ export async function listMyCertificates() {
 export async function listCoursePage(currentUser,page=0,pageSize=12,signal){
  const {data,count,error}=await supabase.from('courses').select('*',{count:'exact'}).is('archived_at',null)
  .order('created_at',{ascending:false}).order('id',{ascending:false}).range(page*pageSize,(page+1)*pageSize-1).abortSignal(signal);
- if(error)throw error;return {items:(await withCourseRatings(data||[],signal)).map(row=>mapCourse(row,currentUser)),count};
+ if(error)throw error;
+ const rows=await withCourseEnrollments(await withCourseRatings(data||[],signal),currentUser,signal);
+ return {items:rows.map(row=>mapCourse(row,currentUser)),count};
 }
 export async function getMyCourseCertificate(courseId){
  const {data:{session}}=await supabase.auth.getSession();if(!session)return null;

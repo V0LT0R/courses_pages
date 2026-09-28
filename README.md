@@ -1,5 +1,7 @@
 # AQUAGEO — семинары и тренинги
 
+**Обновление от 28 сентября 2026:** реестр сертификатов администратора, ручная выдача, импорт архивных PDF и публичный поиск по номеру. Инструкции и результаты — [docs/CERTIFICATE_ADMIN_UPDATE.md](docs/CERTIFICATE_ADMIN_UPDATE.md). Для существующей установки предусмотрен `supabase/certificate_admin_update.sql`.
+
 **Обновление от 25 сентября 2026:** необязательные оценки участников, автоматический рейтинг и улучшенный редактор. Перед запуском новой версии примените `supabase/ratings_update.sql`; инструкции — [docs/SEMINAR_RATINGS_UPDATE.md](docs/SEMINAR_RATINGS_UPDATE.md).
 
 **Обновление от 24 сентября 2026:** необязательный тест, четыре типа вопросов и сертификат по образцу. Порядок ручного обновления Supabase — [docs/SUPABASE_SEMINARS_UPDATE.md](docs/SUPABASE_SEMINARS_UPDATE.md); текущие результаты проверки — [docs/SEMINAR_VALIDATION_2026-09-24.md](docs/SEMINAR_VALIDATION_2026-09-24.md).

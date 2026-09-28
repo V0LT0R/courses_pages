@@ -3,19 +3,24 @@ import { Link } from 'react-router-dom';
 import Hero from '../components/Hero';
 import SectionTitle from '../components/SectionTitle';
 import SeminarCard from '../components/SeminarCard';
+import CertificateCheckBanner from '../components/CertificateCheckBanner';
 import { news, questionnaireStats } from '../data/seminars';
 import { listCourses } from '../lib/courseService';
 import { useAuth } from '../context/AuthContext';
 
 export default function HomePage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [seminars, setSeminars] = useState([]);
 
   useEffect(() => {
+    let active = true;
+    setSeminars([]);
+    if (authLoading) return;
     listCourses(user)
-      .then((items) => setSeminars(items.slice(0, 3)))
-      .catch(() => setSeminars([]));
-  }, [user?.id, user?.role]);
+      .then((items) => { if (active) setSeminars(items.slice(0, 3)); })
+      .catch(() => { if (active) setSeminars([]); });
+    return () => { active = false; };
+  }, [user?.id, user?.role, authLoading]);
 
   return (
     <>
@@ -56,6 +61,7 @@ export default function HomePage() {
           ) : (
             <div className="card content-card">После настройки Supabase здесь появятся добавленные семинары.</div>
           )}
+          <CertificateCheckBanner />
         </div>
       </section>
 
